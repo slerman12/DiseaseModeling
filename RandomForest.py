@@ -13,7 +13,7 @@ def main():
     rf = RandomForestClassifier(n_estimators=100)
     rf.fit(train, target)
 
-    savetxt('Data/submission2.csv', rf.predict(test), delimiter=',', fmt='%f')
+    savetxt('data/submission2.csv', rf.predict(test), delimiter=',', fmt='%f')
 
 if __name__=="__main__":
     main()
