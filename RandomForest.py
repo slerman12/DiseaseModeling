@@ -1,5 +1,4 @@
 from sklearn.ensemble import RandomForestClassifier
-from numpy import genfromtxt, savetxt
 import pandas as pd
 
 def main():
