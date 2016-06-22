@@ -6,15 +6,16 @@ import numpy as np
 import re
 import operator
 
+
 def main():
-    #create the training & test sets
+    # create the training & test sets
     train = pd.read_csv("data/train.csv")
     test = pd.read_csv("data/test.csv")
 
-    #prepare data
+    # prepare data
     train["Age"] = train["Age"].fillna(train["Age"].median())
     train.loc[train["Sex"] == "male", "Sex"] = 0
-    train.loc[train["Sex"] == "female", "Sex"] = 1   
+    train.loc[train["Sex"] == "female", "Sex"] = 1
     train["Embarked"] = train["Embarked"].fillna("S")
     train.loc[train["Embarked"] == "S", "Embarked"] = 0
     train.loc[train["Embarked"] == "C", "Embarked"] = 1
@@ -30,11 +31,56 @@ def main():
     test["Fare"] = test["Fare"].fillna(test["Fare"].median())
 
     # Generate new features
+    new_features(train)
+    new_features(test)
 
+    # The columns we'll use to predict the target
+    predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]
+    train_predictors = train[predictors]
+
+    # Perform feature selection
+    selector = SelectKBest(f_classif, k=5)
+    selector.fit(train[predictors], train["Survived"])
+
+    # Get the raw p-values for each feature, and transform from p-values into scores
+    scores = -np.log10(selector.pvalues_)
+    print(scores)
+
+    # prepare target
+    train_target = train["Survived"]
+
+    # create and train the random forest
+    # multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
+    rf = RandomForestClassifier(random_state=1, n_estimators=150, min_samples_split=4, min_samples_leaf=2)
+
+    # cross validate our RF and output the mean score
+    scores = cross_validation.cross_val_score(rf, train[predictors], train["Survived"], cv=3)
+    print(scores.mean())
+
+    # Fit the algorithm to the data
+    rf.fit(train_predictors, train_target)
+
+    # Predict
+    predictions = rf.predict(test[predictors])
+
+    # Map predictions to outcomes (only possible outcomes are 1 and 0)
+    # predictions[predictions > .5] = 1
+    # predictions[predictions <= .5] = 0
+
+    # Create submission and output
+    submission = pd.DataFrame({
+        "PassengerId": test["PassengerId"],
+        "Survived": predictions
+    })
+    submission.to_csv("data/kaggle.csv", index=False)
+
+
+# Generate new features
+def new_features(data):
     # Generating a familysize column
-    train["FamilySize"] = train["SibSp"] + train["Parch"]
+    data["FamilySize"] = data["SibSp"] + data["Parch"]
     # The .apply method generates a new series
-    train["NameLength"] = train["Name"].apply(lambda x: len(x))
+    data["NameLength"] = data["Name"].apply(lambda x: len(x))
 
     # Add a new Title feature:
 
@@ -47,16 +93,21 @@ def main():
             return title_search.group(1)
         return ""
 
-    # Get all the titles
-    titles = train["Name"].apply(get_title)
+    # Get all the titles and print how often each one occurs.
+    titles = data["Name"].apply(get_title)
+    # print(pd.value_counts(titles))
 
     # Map each title to an integer.  Some titles are very rare, and are compressed into the same codes as other titles.
-    title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Dr": 5, "Rev": 6, "Major": 7, "Col": 7, "Mlle": 8, "Mme": 8, "Don": 9, "Lady": 10, "Countess": 10, "Jonkheer": 10, "Sir": 9, "Capt": 7, "Ms": 2}
-    for k,v in title_mapping.items():
+    title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Dr": 5, "Rev": 6, "Major": 7, "Col": 7, "Mlle": 8,
+                     "Mme": 8, "Don": 9, "Lady": 10, "Countess": 10, "Jonkheer": 10, "Dona": 10, "Sir": 9, "Capt": 7, "Ms": 2}
+    for k, v in title_mapping.items():
         titles[titles == k] = v
 
+    # Verify that we converted everything.
+    # print(pd.value_counts(titles))
+
     # Add in the title column.
-    train["Title"] = titles
+    data["Title"] = titles
 
     # Add a new Family Id feature:
 
@@ -80,47 +131,14 @@ def main():
         return family_id_mapping[family_id]
 
     # Get the family ids with the apply method
-    family_ids = train.apply(get_family_id, axis=1)
+    family_ids = data.apply(get_family_id, axis=1)
 
     # There are a lot of family ids, so we'll compress all of the families under 3 members into one code.
-    family_ids[train["FamilySize"] < 3] = -1
+    family_ids[data["FamilySize"] < 3] = -1
 
-    # Print the count of each unique id.
-    print(pd.value_counts(family_ids))
+    # Add in the FamilyId column.
+    data["FamilyId"] = family_ids
 
-    train["FamilyId"] = family_ids
 
-    # The columns we'll use to predict the target
-    predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]
-    train_predictors = train[predictors]
-
-    #prepare target
-    train_target = train["Survived"]
-
-    #create and train the random forest
-    #multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
-    rf = RandomForestClassifier(random_state=1, n_estimators=150, min_samples_split=4, min_samples_leaf=2)
-
-    #cross validate our RF and output the mean score
-    scores = cross_validation.cross_val_score(rf, train[predictors], train["Survived"], cv=3)
-    print(scores.mean())
-
-    # Fit the algorithm to the data
-    rf.fit(train_predictors, train_target)
-
-    # Predict
-    predictions = rf.predict(test[predictors])
-
-    # Map predictions to outcomes (only possible outcomes are 1 and 0)
-    predictions[predictions > .5] = 1
-    predictions[predictions <=.5] = 0
-
-    # Create submission and output
-    submission = pd.DataFrame({
-        "PassengerId": test["PassengerId"],
-        "Survived": predictions
-    })
-    submission.to_csv("data/kaggle.csv", index=False)
-
-if __name__=="__main__":
+if __name__ == "__main__":
     main()
