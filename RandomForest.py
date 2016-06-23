@@ -36,14 +36,8 @@ def main():
     new_features(train)
     new_features(test)
 
-    # Print some preliminary info about the datasets
-    train.info()
-    print("----------------------------")
-    test.info()
-
     # The columns we'll use to predict the target
     predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]
-    # predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked"]
 
     # Prepare predictors
     train_predictors = train[predictors]
@@ -57,33 +51,6 @@ def main():
 
     # Fit the algorithm to the data
     rf.fit(train_predictors, train_target)
-
-    # Perform feature selection
-    selector = SelectKBest(f_classif, k=5)
-    selector.fit(train_predictors, train_target)
-
-    # Feature importances
-    print("Feature importances:")
-    print(rf.feature_importances_)
-
-    # Get the raw p-values for each feature, and transform from p-values into scores
-    scores = -np.log10(selector.pvalues_)
-    print("Univariate feature selection:")
-    print(predictors)
-    print(scores)
-
-    # Base estimate
-    print("\nBase score: ")
-    print(rf.score(train_predictors, train_target))
-
-    # Cross validate our RF and output the mean score
-    scores = cross_validation.cross_val_score(rf, train_predictors, train_target, cv=3)
-    print("Cross validated score: ")
-    print(scores.mean())
-
-    # Out of bag estimate
-    print("OOB score: ")
-    print(rf.oob_score_)
 
     # Predict
     predictions = rf.predict(test[predictors])
@@ -99,6 +66,33 @@ def main():
     })
     submission.to_csv("data/kaggle.csv", index=False)
 
+    # Perform feature selection
+    selector = SelectKBest(f_classif, k=5)
+    selector.fit(train_predictors, train_target)
+
+    # Get the raw p-values for each feature, and transform from p-values into scores
+    scores = -np.log10(selector.pvalues_)
+    print("Univariate feature selection:")
+    print(predictors)
+    print(scores)
+
+    # Feature importances
+    print("Feature importances:")
+    print(rf.feature_importances_)
+
+    # Base estimate
+    print("\nBase score: ")
+    print(rf.score(train_predictors, train_target))
+
+    # Cross validate our RF and output the mean score
+    scores = cross_validation.cross_val_score(rf, train_predictors, train_target, cv=3)
+    print("Cross validated score: ")
+    print(scores.mean())
+
+    # Out of bag estimate
+    print("OOB score: ")
+    print(rf.oob_score_)
+
     # Output roc auc score
     train['is_train'] = np.random.uniform(0, 1, len(train)) <= .75
     traindata, validatedata = train[train['is_train']==True], train[train['is_train']==False]
@@ -110,7 +104,7 @@ def main():
     disbursed = rf.predict_proba(x_validatedata)
     fpr, tpr, _ = roc_curve(y_validatedata, disbursed[:,1])
     roc_auc = auc(fpr, tpr)
-    print ("\nRoc_auc score (I don't fully understand this metric): ")
+    print ("Roc_auc score (I don't fully understand this metric): ")
     print (roc_auc)
 
 
