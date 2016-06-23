@@ -1,11 +1,9 @@
-from sklearn import cross_validation
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 import pandas as pd
 import numpy as np
-import re
-import operator
-from sklearn.metrics import roc_curve, auc
+from sklearn.cross_validation import train_test_split
+from sklearn.metrics import confusion_matrix
 
 
 def main():
@@ -27,10 +25,10 @@ def main():
 
     # Create and train the random forest
     # Multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
-    rf = RandomForestClassifier(random_state=1, n_estimators=100, min_samples_split=4, min_samples_leaf=2, oob_score=True)
+    rf = RandomForestClassifier(random_state=1, n_estimators=150, min_samples_split=25, min_samples_leaf=25, oob_score=True)
 
     # Fit the algorithm to the data
-    rf.fit(train_predictors, train_target)
+    y_pred = rf.fit(train_predictors, train_target)
 
     # # Predict
     # predictions = rf.predict(test[predictors])
@@ -82,6 +80,12 @@ def main():
     # roc_auc = auc(fpr, tpr)
     # print("Roc_auc score (I don't fully understand this metric): ")
     # print(roc_auc)
+
+    # Split the data into a training set and a test set, and print a confusion matrix
+    X_train, X_test, y_train, y_test = train_test_split(train_predictors, train_target, random_state=1)
+    y_pred = rf.fit(X_train, y_train).predict(X_test)
+    print("\nConfusion matrix: ")
+    print(confusion_matrix(y_test, y_pred))
 
 
 # Generate new features

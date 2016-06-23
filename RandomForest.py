@@ -1,11 +1,12 @@
 from sklearn import cross_validation
+from sklearn.cross_validation import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 import pandas as pd
 import numpy as np
 import re
 import operator
-from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_curve, auc, confusion_matrix
 
 
 def main():
@@ -17,10 +18,11 @@ def main():
     train["Age"] = train["Age"].fillna(train["Age"].median())
     train.loc[train["Sex"] == "male", "Sex"] = 0
     train.loc[train["Sex"] == "female", "Sex"] = 1
-    train["Embarked"] = train["Embarked"].fillna("S")
+    train["Embarked"] = train["Embarked"].fillna("C")
     train.loc[train["Embarked"] == "S", "Embarked"] = 0
     train.loc[train["Embarked"] == "C", "Embarked"] = 1
     train.loc[train["Embarked"] == "Q", "Embarked"] = 2
+    train["Cabin"] = train["Cabin"].fillna("Z")
 
     # Prepare test data
     test["Age"] = test["Age"].fillna(test["Age"].median())
@@ -31,13 +33,15 @@ def main():
     test.loc[test["Embarked"] == "C", "Embarked"] = 1
     test.loc[test["Embarked"] == "Q", "Embarked"] = 2
     test["Fare"] = test["Fare"].fillna(test["Fare"].median())
+    test["Cabin"] = test["Cabin"].fillna("Z")
 
     # Generate new features
     new_features(train)
     new_features(test)
 
     # The columns we'll use to predict the target
-    predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]
+    predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked",
+                  "FamilySize", "Title", "FamilyId"]
 
     # Prepare predictors
     train_predictors = train[predictors]
@@ -107,11 +111,18 @@ def main():
     print("Roc_auc score (I don't fully understand this metric): ")
     print(roc_auc)
 
+    # Split the data into a training set and a test set, and print a confusion matrix
+    X_train, X_test, y_train, y_test = train_test_split(train_predictors, train_target, random_state=1)
+    y_pred = rf.fit(X_train, y_train).predict(X_test)
+    print("\nConfusion matrix: ")
+    print(confusion_matrix(y_test, y_pred))
+
 
 # Generate new features
 def new_features(data):
     # Generating a familysize column
     data["FamilySize"] = data["SibSp"] + data["Parch"] + 1
+
     # The .apply method generates a new series
     data["NameLength"] = data["Name"].apply(lambda x: len(x))
 
@@ -126,9 +137,8 @@ def new_features(data):
             return title_search.group(1)
         return ""
 
-    # Get all the titles and print how often each one occurs.
+    # Get all the titles
     titles = data["Name"].apply(get_title)
-    # print(pd.value_counts(titles))
 
     # Map each title to an integer.  Some titles are very rare, and are compressed into the same codes as other titles.
     title_mapping = {"Mr": 1, "Miss": 2, "Mrs": 3, "Master": 4, "Dr": 5, "Rev": 6, "Major": 7, "Col": 7, "Mlle": 8,
@@ -141,6 +151,22 @@ def new_features(data):
 
     # Add in the title column.
     data["Title"] = titles
+
+    # Add a new Deck feature
+
+    # Get all the decks (first character of cabin)
+    decks = data["Cabin"].str[0]
+
+    # Map each character (A - F) to an int
+    deck_mapping = {"A": 1, "B": 2, "C": 3, "D": 4, "E": 5, "F": 6, "G": 7, "T": 8, "Z": 9}
+    for k, v in deck_mapping.items():
+        decks[decks == k] = v
+
+    # Verify that we converted everything.
+    # print(pd.value_counts(decks))
+
+    # Add in the decks column
+    data["Deck"] = decks
 
     # Add a new Family Id feature:
 
@@ -171,6 +197,11 @@ def new_features(data):
 
     # Add in the FamilyId column.
     data["FamilyId"] = family_ids
+
+    # Making FamilySize discrete based on 3 categories: singleton, small, and large familes
+    # data.loc[data["FamilySize"] == 1, "FamilySize"] = 0
+    # data.loc[(data["FamilySize"] > 1) & (data["FamilySize"] < 5), "FamilySize"] = 1
+    # data.loc[data["FamilySize"] > 4, "FamilySize"] = 2
 
 
 if __name__ == "__main__":
