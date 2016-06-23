@@ -99,6 +99,7 @@ def main():
     })
     submission.to_csv("data/kaggle.csv", index=False)
 
+    # Output roc auc score
     train['is_train'] = np.random.uniform(0, 1, len(train)) <= .75
     traindata, validatedata = train[train['is_train']==True], train[train['is_train']==False]
     x_traindata = traindata[predictors]
