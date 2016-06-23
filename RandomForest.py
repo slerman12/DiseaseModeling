@@ -104,8 +104,8 @@ def main():
     disbursed = rf.predict_proba(x_validatedata)
     fpr, tpr, _ = roc_curve(y_validatedata, disbursed[:,1])
     roc_auc = auc(fpr, tpr)
-    print ("Roc_auc score (I don't fully understand this metric): ")
-    print (roc_auc)
+    print("Roc_auc score (I don't fully understand this metric): ")
+    print(roc_auc)
 
 
 # Generate new features
