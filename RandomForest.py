@@ -5,14 +5,15 @@ import pandas as pd
 import numpy as np
 import re
 import operator
+from sklearn.metrics import roc_curve, auc
 
 
 def main():
-    # create the training & test sets
+    # Create the training & test sets from files
     train = pd.read_csv("data/train.csv")
     test = pd.read_csv("data/test.csv")
 
-    # prepare data
+    # Prepare train data
     train["Age"] = train["Age"].fillna(train["Age"].median())
     train.loc[train["Sex"] == "male", "Sex"] = 0
     train.loc[train["Sex"] == "female", "Sex"] = 1
@@ -21,6 +22,7 @@ def main():
     train.loc[train["Embarked"] == "C", "Embarked"] = 1
     train.loc[train["Embarked"] == "Q", "Embarked"] = 2
 
+    # Prepare test data
     test["Age"] = test["Age"].fillna(test["Age"].median())
     test.loc[test["Sex"] == "male", "Sex"] = 0
     test.loc[test["Sex"] == "female", "Sex"] = 1
@@ -34,38 +36,95 @@ def main():
     new_features(train)
     new_features(test)
 
+    # Print some preliminary info about the datasets
+    train.info()
+    print("----------------------------")
+    test.info()
+
     # The columns we'll use to predict the target
     predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked", "FamilySize", "Title", "FamilyId"]
+    # predictors = ["Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Embarked"]
+
+    # Prepare predictors
     train_predictors = train[predictors]
 
-    # Perform feature selection
-    selector = SelectKBest(f_classif, k=5)
-    selector.fit(train[predictors], train["Survived"])
-
-    # Get the raw p-values for each feature, and transform from p-values into scores
-    scores = -np.log10(selector.pvalues_)
-    print(scores)
-
-    # prepare target
+    # Prepare target
     train_target = train["Survived"]
 
-    # create and train the random forest
-    # multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
-    rf = RandomForestClassifier(random_state=1, n_estimators=150, min_samples_split=4, min_samples_leaf=2)
 
-    # cross validate our RF and output the mean score
-    scores = cross_validation.cross_val_score(rf, train[predictors], train["Survived"], cv=3)
-    print(scores.mean())
+
+
+
+
+    # #create and train the random forest
+    # #multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
+    # rf = RandomForestClassifier(n_estimators=100, oob_score=True)
+    # rf.fit(train_predictors, train_target)
+    # print("Base score:")
+    # print(rf.score(train_predictors, train_target))
+    # # cross validate our RF and output the mean score
+    # scores = cross_validation.cross_val_score(rf, train_predictors, train_target, cv=3)
+    # print("Cross validated score: ")
+    # print(scores.mean())
+    # print("OOB score: ")
+    # print(rf.oob_score_)
+    # # Predict
+    # predictions = rf.predict(test[predictors])
+    # # Map predictions to outcomes (only possible outcomes are 1 and 0)
+    # predictions[predictions > .5] = 1
+    # predictions[predictions <= .5] = 0
+    # # Create submission and output
+    # submission = pd.DataFrame({
+    #     "PassengerId": test["PassengerId"],
+    #     "Survived": predictions
+    # })
+    # submission.to_csv("data/kaggle.csv", index=False)
+
+
+
+
+
+
+    # Create and train the random forest
+    # Multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
+    rf = RandomForestClassifier(random_state=1, n_estimators=150, min_samples_split=4, min_samples_leaf=2, oob_score=True)
 
     # Fit the algorithm to the data
     rf.fit(train_predictors, train_target)
+
+    # Perform feature selection
+    selector = SelectKBest(f_classif, k=5)
+    selector.fit(train_predictors, train_target)
+
+    # Feature importances
+    print("Feature importances:")
+    print(rf.feature_importances_)
+
+    # Get the raw p-values for each feature, and transform from p-values into scores
+    scores = -np.log10(selector.pvalues_)
+    print("Univariate feature selection:")
+    print(predictors)
+    print(scores)
+
+    # Base estimate
+    print("\nBase score: ")
+    print(rf.score(train_predictors, train_target))
+
+    # Cross validate our RF and output the mean score
+    scores = cross_validation.cross_val_score(rf, train_predictors, train_target, cv=3)
+    print("Cross validated score: ")
+    print(scores.mean())
+
+    # Out of bag estimate
+    print("OOB score: ")
+    print(rf.oob_score_)
 
     # Predict
     predictions = rf.predict(test[predictors])
 
     # Map predictions to outcomes (only possible outcomes are 1 and 0)
-    # predictions[predictions > .5] = 1
-    # predictions[predictions <= .5] = 0
+    predictions[predictions > .5] = 1
+    predictions[predictions <= .5] = 0
 
     # Create submission and output
     submission = pd.DataFrame({
@@ -74,11 +133,24 @@ def main():
     })
     submission.to_csv("data/kaggle.csv", index=False)
 
+    train['is_train'] = np.random.uniform(0, 1, len(train)) <= .75
+    traindata, validatedata = train[train['is_train']==True], train[train['is_train']==False]
+    x_traindata = traindata[predictors]
+    y_traindata = traindata["Survived"]
+    x_validatedata = validatedata[predictors]
+    y_validatedata = validatedata["Survived"]
+    rf.fit(x_traindata, y_traindata)
+    disbursed = rf.predict_proba(x_validatedata)
+    fpr, tpr, _ = roc_curve(y_validatedata, disbursed[:,1])
+    roc_auc = auc(fpr, tpr)
+    print ("\nRoc_auc score (I don't fully understand this metric): ")
+    print (roc_auc)
+
 
 # Generate new features
 def new_features(data):
     # Generating a familysize column
-    data["FamilySize"] = data["SibSp"] + data["Parch"]
+    data["FamilySize"] = data["SibSp"] + data["Parch"] + 1
     # The .apply method generates a new series
     data["NameLength"] = data["Name"].apply(lambda x: len(x))
 
