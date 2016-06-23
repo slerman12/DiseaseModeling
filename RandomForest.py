@@ -51,40 +51,6 @@ def main():
     # Prepare target
     train_target = train["Survived"]
 
-
-
-
-
-
-    # #create and train the random forest
-    # #multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
-    # rf = RandomForestClassifier(n_estimators=100, oob_score=True)
-    # rf.fit(train_predictors, train_target)
-    # print("Base score:")
-    # print(rf.score(train_predictors, train_target))
-    # # cross validate our RF and output the mean score
-    # scores = cross_validation.cross_val_score(rf, train_predictors, train_target, cv=3)
-    # print("Cross validated score: ")
-    # print(scores.mean())
-    # print("OOB score: ")
-    # print(rf.oob_score_)
-    # # Predict
-    # predictions = rf.predict(test[predictors])
-    # # Map predictions to outcomes (only possible outcomes are 1 and 0)
-    # predictions[predictions > .5] = 1
-    # predictions[predictions <= .5] = 0
-    # # Create submission and output
-    # submission = pd.DataFrame({
-    #     "PassengerId": test["PassengerId"],
-    #     "Survived": predictions
-    # })
-    # submission.to_csv("data/kaggle.csv", index=False)
-
-
-
-
-
-
     # Create and train the random forest
     # Multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
     rf = RandomForestClassifier(random_state=1, n_estimators=150, min_samples_split=4, min_samples_leaf=2, oob_score=True)
