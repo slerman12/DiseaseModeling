@@ -112,7 +112,7 @@ def main():
 
     # Print a confusion matrix for random forest
     y_pred_rf = rf.fit(X_train, y_train).predict(X_test)
-    print("\nConfusion matrix (rows: actual, cols: prediction)")
+    print("\nConfusion matrix (rows: true, cols: pred)")
     print(confusion_matrix(y_test, y_pred_rf))
 
     # Classification report
