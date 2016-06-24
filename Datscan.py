@@ -1,6 +1,9 @@
 from sklearn import preprocessing
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
 import pandas as pd
 import numpy as np
 from sklearn.cross_validation import train_test_split
@@ -8,6 +11,9 @@ from sklearn.metrics import confusion_matrix, classification_report, accuracy_sc
 
 
 def main():
+    # Set seed
+    np.random.seed(0)
+
     # Create the training & test sets from files
     train = pd.read_csv("data/all_visits_practice.csv")
 
@@ -41,10 +47,10 @@ def main():
 
     # Create and train the random forest
     # Multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
-    rf = RandomForestClassifier(random_state=1, n_estimators=350, min_samples_split=50, min_samples_leaf=25, oob_score=True)
+    rf = RandomForestClassifier(n_estimators=350, min_samples_split=50, min_samples_leaf=25, oob_score=True)
 
     # Fit the algorithm to the data
-    y_pred = rf.fit(train_predictors, train_target)
+    rf.fit(train_predictors, train_target)
 
     # # Predict
     # predictions = rf.predict(test[predictors])
@@ -57,6 +63,7 @@ def main():
     # submission.to_csv("data/kaggle.csv", index=False)
 
     # Metrics:
+    print("Random Forest Metrics: \n")
 
     # Perform feature selection
     selector = SelectKBest(f_classif, k='all')
@@ -100,22 +107,61 @@ def main():
     # print("Roc_auc score (I don't fully understand this metric): ")
     # print(roc_auc)
 
-    # Split the data into a training set and a test set, and print a confusion matrix
-    X_train, X_test, y_train, y_test = train_test_split(train_predictors, train_target, random_state=1)
-    y_pred = rf.fit(X_train, y_train).predict(X_test)
+    # Split the data into a training set and a test set
+    X_train, X_test, y_train, y_test = train_test_split(train_predictors, train_target)
+
+    # Print a confusion matrix for random forest
+    y_pred_rf = rf.fit(X_train, y_train).predict(X_test)
     print("\nConfusion matrix (rows: actual, cols: prediction)")
-    print(confusion_matrix(y_test, y_pred))
+    print(confusion_matrix(y_test, y_pred_rf))
 
     # Classification report
     # print("\nClassification report:")
     # print(classification_report(y_test, y_pred))
 
-    # Accuracy score
-    print("Accuracy score: " + str(accuracy_score(y_test, y_pred)))
+    # Accuracy scores of ensemble of Random Forest, Logistic Regression, and SVM
+    ensemble(rf, X_train, y_train, X_test, y_test, True, False)
+
+    # Base score of weighted ensemble of RF, LR, and SVM
+    ensemble(rf, train_predictors, train_target, train_predictors, train_target, False, True)
 
 
 # Generate new features
 # def new_features(data):
+
+
+def ensemble(rf, X_train, y_train, X_test, y_test, accuracy, base_score):
+    # Random forest
+    y_pred_rf = rf.fit(X_train, y_train).predict(X_test)
+    if accuracy: print("\nAccuracy score of random forest: " + str(accuracy_score(y_test, y_pred_rf)))
+
+    # Logistic regression
+    lr = LogisticRegression()
+    y_pred_lr = lr.fit(X_train, y_train).predict(X_test)
+    if accuracy:
+        print("Accuracy score of logistic regression: " + str(accuracy_score(y_test, y_pred_lr)))
+
+    # SVM
+    svm = SVC()
+    y_pred_svm = svm.fit(X_train, y_train).predict(X_test)
+    if accuracy: print("Accuracy score of SVM: " + str(accuracy_score(y_test, y_pred_svm)))
+
+    # Decision tree
+    dt = DecisionTreeClassifier()
+    y_pred_dt = dt.fit(X_train, y_train).predict(X_test)
+    if accuracy:
+        print("Accuracy score of decision tree: " + str(accuracy_score(y_test, y_pred_dt)))
+
+    # Weighted ensemble of RF, LR, and SVM
+    y_pred_ensemble = (y_pred_rf + y_pred_lr + y_pred_svm) / 3
+    if accuracy:
+        print("Accuracy score of weighted ensemble of RF, LR, and SVM: " + str(accuracy_score(y_test, y_pred_ensemble)))
+
+    # Base score
+    if base_score:
+        print("Base score of weighted ensemble of RF, LR, and SVM: " +str(accuracy_score(y_train, y_pred_ensemble)))
+
+    return y_pred_ensemble
 
 
 if __name__ == "__main__":
