@@ -153,7 +153,7 @@ def ensemble(rf, X_train, y_train, X_test, y_test, accuracy, base_score):
         print("Accuracy score of decision tree: " + str(accuracy_score(y_test, y_pred_dt)))
 
     # Weighted ensemble of RF, LR, and SVM
-    y_pred_ensemble = (y_pred_rf + y_pred_lr + y_pred_svm) / 3
+    y_pred_ensemble = ((y_pred_rf + y_pred_lr + y_pred_svm) / 3).astype(int)
     if accuracy:
         print("Accuracy score of weighted ensemble of RF, LR, and SVM: " + str(accuracy_score(y_test, y_pred_ensemble)))
 
