@@ -1,21 +1,37 @@
+from sklearn import preprocessing
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 import pandas as pd
 import numpy as np
 from sklearn.cross_validation import train_test_split
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 
 
 def main():
     # Create the training & test sets from files
     train = pd.read_csv("data/all_visits_practice.csv")
 
+    # Diagnostics
+    # print("Info")
+    # print(train.info())
+    # print("Describe")
+    # print(train.describe())
+    # print("Unique")
+    # print(train["EVENT_ID"].unique())
+    # print("Value counts EVENT_ID")
+    # print(pd.value_counts(train["EVENT_ID"]))
+    # print("Value counts NP3BRADY")
+    # print(pd.value_counts(train["NP3BRADY"]))
+
+    # Encode EVENT_ID to numeric
+    train["EVENT_ID"] = preprocessing.LabelEncoder().fit_transform(train["EVENT_ID"])
+
     # Generate new features
     # new_features(train)
     # new_features(test)
 
     # The columns we'll use to predict the target
-    predictors = ["CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L"]
+    predictors = ["PATNO", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L"]
 
     # Prepare predictors
     train_predictors = train[predictors]
@@ -25,7 +41,7 @@ def main():
 
     # Create and train the random forest
     # Multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
-    rf = RandomForestClassifier(random_state=1, n_estimators=150, min_samples_split=25, min_samples_leaf=25, oob_score=True)
+    rf = RandomForestClassifier(random_state=1, n_estimators=350, min_samples_split=50, min_samples_leaf=25, oob_score=True)
 
     # Fit the algorithm to the data
     y_pred = rf.fit(train_predictors, train_target)
@@ -40,6 +56,8 @@ def main():
     # })
     # submission.to_csv("data/kaggle.csv", index=False)
 
+    # Metrics:
+
     # Perform feature selection
     selector = SelectKBest(f_classif, k='all')
     selector.fit(train_predictors, train_target)
@@ -47,12 +65,13 @@ def main():
     # Get the raw p-values for each feature, and transform from p-values into scores
     scores = -np.log10(selector.pvalues_)
     print("Univariate feature selection:")
-    print(predictors)
-    print(scores)
+    for feature, imp in zip(predictors, scores):
+        print(feature, imp)
 
     # Feature importances
-    print("Feature importances:")
-    print(rf.feature_importances_)
+    print("\nFeature importances:")
+    for feature, imp in zip(predictors, rf.feature_importances_):
+        print(feature, imp)
 
     # Base estimate
     print("\nBase score: ")
@@ -84,8 +103,15 @@ def main():
     # Split the data into a training set and a test set, and print a confusion matrix
     X_train, X_test, y_train, y_test = train_test_split(train_predictors, train_target, random_state=1)
     y_pred = rf.fit(X_train, y_train).predict(X_test)
-    print("\nConfusion matrix: ")
+    print("\nConfusion matrix (rows: actual, cols: prediction)")
     print(confusion_matrix(y_test, y_pred))
+
+    # Classification report
+    # print("\nClassification report:")
+    # print(classification_report(y_test, y_pred))
+
+    # Accuracy score
+    print("Accuracy score: " + str(accuracy_score(y_test, y_pred)))
 
 
 # Generate new features

@@ -77,12 +77,13 @@ def main():
     # Get the raw p-values for each feature, and transform from p-values into scores
     scores = -np.log10(selector.pvalues_)
     print("Univariate feature selection:")
-    print(predictors)
-    print(scores)
+    for feature, imp in zip(predictors, scores):
+        print(feature, imp)
 
     # Feature importances
-    print("Feature importances:")
-    print(rf.feature_importances_)
+    print("\nFeature importances:")
+    for feature, imp in zip(predictors, rf.feature_importances_):
+        print(feature, imp)
 
     # Base estimate
     print("\nBase score: ")
@@ -114,7 +115,7 @@ def main():
     # Split the data into a training set and a test set, and print a confusion matrix
     X_train, X_test, y_train, y_test = train_test_split(train_predictors, train_target, random_state=1)
     y_pred = rf.fit(X_train, y_train).predict(X_test)
-    print("\nConfusion matrix: ")
+    print("\nConfusion matrix (rows: actual, cols: prediction)")
     print(confusion_matrix(y_test, y_pred))
 
 
@@ -198,9 +199,9 @@ def new_features(data):
     # Add in the FamilyId column.
     data["FamilyId"] = family_ids
 
-    # Making FamilySize discrete based on 3 categories: singleton, small, and large familes
+    # Making FamilySize discrete based on 3 categories: singleton, small, and large families
     # data.loc[data["FamilySize"] == 1, "FamilySize"] = 0
-    # data.loc[(data["FamilySize"] > 1) & (data["FamilySize"] < 5), "FamilySize"] = 1
+    # data.loc[(data["FamilySize"].between(2, 4)), "FamilySize"] = 1
     # data.loc[data["FamilySize"] > 4, "FamilySize"] = 2
 
 
