@@ -3,11 +3,13 @@ from sklearn import preprocessing, cross_validation
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 import pandas as pd
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.ensemble import VotingClassifier
 
 
 def main():
@@ -31,6 +33,9 @@ def main():
 
     # Encode EVENT_ID to numeric
     train["EVENT_ID"] = preprocessing.LabelEncoder().fit_transform(train["EVENT_ID"])
+
+    # Remove the class with only a single label
+    train = train[train.NP3BRADY != 4]
 
     # Generate new features
     # new_features(train)
@@ -84,80 +89,114 @@ def main():
     print("OOB score: ")
     print(rf.oob_score_)
 
-    # Split the data into a training set and a test set
-    X_train, X_test, y_train, y_test = cross_validation.train_test_split(train_predictors, train_target)
+    # # Split the data into a training set and a test set
+    # X_train, X_test, y_train, y_test = cross_validation.train_test_split(train_predictors, train_target)
+    #
+    # # Print a confusion matrix for random forest
+    # y_pred_rf = rf.fit(X_train, y_train).predict(X_test)
+    # print("\nConfusion matrix of random forest (rows: true, cols: pred)")
+    # print(confusion_matrix(y_test, y_pred_rf))
+    #
+    # # Classification report
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter("ignore")
+    #     print("\nClassification report of random forest:")
+    #     print(classification_report(y_test, y_pred_rf))
 
-    # Print a confusion matrix for random forest
-    y_pred_rf = rf.fit(X_train, y_train).predict(X_test)
-    print("\nConfusion matrix of random forest (rows: true, cols: pred)")
-    print(confusion_matrix(y_test, y_pred_rf))
+    # Ensemble metrics
+    print("\nENSEMBLE METRICS:\n")
+    ensemble(rf, train_predictors, train_target)
 
-    # Classification report
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        print("\nClassification report of random forest:")
-        print(classification_report(y_test, y_pred_rf))
-
-    print("ENSEMBLE METRICS:\n")
-
-    # Base score of weighted ensemble of RF, LR, and SVM
-    ensemble(rf, train_predictors, train_target, train_predictors, train_target, False, True, False, False)
-
-    # Accuracy scores of ensemble of Random Forest, Logistic Regression, and SVM
-    ensemble(rf, X_train, y_train, X_test, y_test, True, False, True, True)
+    # # Base score of weighted ensemble of RF, LR, and SVM
+    # ensemble(rf, train_predictors, train_target, train_predictors, train_target, False, True, False, False)
+    #
+    # # Accuracy scores of ensemble of Random Forest, Logistic Regression, and SVM
+    # ensemble(rf, X_train, y_train, X_test, y_test, True, False, True, True)
 
 
 # Generate new features
 # def new_features(data):
 
 
-def ensemble(rf, X_train, y_train, X_test, y_test, accuracy, base_score, class_report, conf_mat):
-    # Random forest
-    y_pred_rf = rf.fit(X_train, y_train).predict(X_test)
-    if accuracy:
-        print("Accuracy score of random forest: " + str(accuracy_score(y_test, y_pred_rf)))
+# def ensemble(rf, X_train, y_train, X_test, y_test, accuracy, base_score, class_report, conf_mat):
+    # # Random forest
+    # y_pred_rf = rf.fit(X_train, y_train).predict(X_test)
+    # if accuracy:
+    #     print("Accuracy score of random forest: " + str(accuracy_score(y_test, y_pred_rf)))
+    #
+    # # Logistic regression
+    # lr = LogisticRegression()
+    # y_pred_lr = lr.fit(X_train, y_train).predict(X_test)
+    # if accuracy:
+    #     print("Accuracy score of logistic regression: " + str(accuracy_score(y_test, y_pred_lr)))
+    #
+    # # SVM
+    # svm = SVC()
+    # y_pred_svm = svm.fit(X_train, y_train).predict(X_test)
+    # if accuracy:
+    #     print("Accuracy score of SVM: " + str(accuracy_score(y_test, y_pred_svm)))
+    #
+    # # Decision tree
+    # dt = DecisionTreeClassifier()
+    # y_pred_dt = dt.fit(X_train, y_train).predict(X_test)
+    # if accuracy:
+    #     print("Accuracy score of decision tree: " + str(accuracy_score(y_test, y_pred_dt)))
+    #
+    # # Weighted ensemble of RF, LR, and SVM
+    # y_pred_ensemble = np.rint((y_pred_rf + y_pred_lr + y_pred_svm) / 3)
+    # if accuracy:
+    #     print("Accuracy score of ensemble of RF, LR, and SVM: " + str(accuracy_score(y_test, y_pred_ensemble)))# # Base score
+    # if base_score:
+    #     print("Base score of ensemble of RF, LR, and SVM: " +str(accuracy_score(y_train, y_pred_ensemble)))
+    #
+    # # Confusion matrix
+    # if conf_mat:
+    #     print("\nConfusion matrix of ensemble (rows: true, cols: pred)")
+    #     print(confusion_matrix(y_test, y_pred_ensemble))
+    #     print("")
+    #
+    # # Classification report
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter("ignore")
+    #     if class_report:
+    #         print("\nClassification report of ensemble of RF, LR, and SVM: ")
+    #         print(classification_report(y_test, y_pred_ensemble))
+    #
+    # return y_pred_ensemble
 
-    # Logistic regression
+
+def ensemble(rf, X, y):
+    # Classifiers
     lr = LogisticRegression()
-    y_pred_lr = lr.fit(X_train, y_train).predict(X_test)
-    if accuracy:
-        print("Accuracy score of logistic regression: " + str(accuracy_score(y_test, y_pred_lr)))
+    svm = SVC(probability=True)
+    gnb = GaussianNB()
+    knn = KNeighborsClassifier(n_neighbors=7)
 
-    # SVM
-    svm = SVC()
-    y_pred_svm = svm.fit(X_train, y_train).predict(X_test)
-    if accuracy:
-        print("Accuracy score of SVM: " + str(accuracy_score(y_test, y_pred_svm)))
+    # Ensemble
+    eclf = VotingClassifier(estimators=[('rf', rf), ('lr', lr), ('svm', svm)], voting='soft')
 
-    # Decision tree
-    dt = DecisionTreeClassifier()
-    y_pred_dt = dt.fit(X_train, y_train).predict(X_test)
-    if accuracy:
-        print("Accuracy score of decision tree: " + str(accuracy_score(y_test, y_pred_dt)))
+    print("Cross validation:\n")
+    # Accuracies
+    for clf, label in zip([rf, lr, svm, gnb, knn, eclf], ['Random Forest', 'Logistic Regression', 'SVM', 'naive Bayes', 'kNN', 'Ensemble of RF, LR, and SVM']):
+        # fit_params = {"sample_weight", [2, 1, 3, 3, 4, 4]}
+        scores = cross_validation.cross_val_score(clf, X, y, cv=2, scoring='accuracy')
+        print("Accuracy: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
 
-    # Weighted ensemble of RF, LR, and SVM
-    y_pred_ensemble = ((y_pred_rf + y_pred_lr + y_pred_svm) / 3).astype(int)
-    if accuracy:
-        print("Accuracy score of ensemble of RF, LR, and SVM: " + str(accuracy_score(y_test, y_pred_ensemble)))
+    # Split the data into a training set and a test set
+    X_train, X_test, y_train, y_test = cross_validation.train_test_split(X, y, test_size=0.25)
 
-    # Base score
-    if base_score:
-        print("Base score of ensemble of RF, LR, and SVM: " +str(accuracy_score(y_train, y_pred_ensemble)))
+    print("\n75/25 split: \n")
 
-    # Confusion matrix
-    if conf_mat:
-        print("\nConfusion matrix of ensemble (rows: true, cols: pred)")
-        print(confusion_matrix(y_test, y_pred_ensemble))
-        print("")
+    # Print a confusion matrix for ensemble
+    y_pred_ensemble = eclf.fit(X_train, y_train).predict(X_test)
+    print("Confusion matrix of ensemble (rows: true, cols: pred)")
+    print(confusion_matrix(y_test, y_pred_ensemble))
+    print("")
 
-    # Classification report
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        if class_report:
-            print("\nClassification report of ensemble of RF, LR, and SVM: ")
-            print(classification_report(y_test, y_pred_ensemble))
-
-    return y_pred_ensemble
+    # Accuracies
+    for clf, label in zip([rf, lr, svm, gnb, knn, eclf], ['Random Forest', 'Logistic Regression', 'SVM', 'naive Bayes', 'kNN', 'Ensemble of RF, LR, and SVM']):
+        y_pred = clf.fit(X_train, y_train).predict(X_test)
+        print("Accuracy: %0.2f [%s]" % (accuracy_score(y_test, y_pred), label))
 
 
 if __name__ == "__main__":
