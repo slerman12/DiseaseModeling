@@ -117,6 +117,12 @@ def ensemble(rf, X, y):
         y_pred = clf.fit(X_train, y_train).predict(X_test)
         print("Accuracy: %0.2f [%s]" % (accuracy_score(y_test, y_pred), label))
 
+    # Classification report
+    print("\nClassification report:")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        print(classification_report(y_test, y_pred_ensemble))
+
     # Print a confusion matrix for ensemble
     print("\nConfusion matrix of ensemble (rows: true, cols: pred)")
 
