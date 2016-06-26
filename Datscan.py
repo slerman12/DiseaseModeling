@@ -1,16 +1,16 @@
-import warnings
-from sklearn import preprocessing, cross_validation
 from sklearn.ensemble import RandomForestClassifier
+from sklearn import preprocessing, cross_validation
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
-import pandas as pd
-import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 from sklearn.ensemble import VotingClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.svm import SVC
+import pandas as pd
+import numpy as np
+import warnings
 import matplotlib.pyplot as plt
 
 
