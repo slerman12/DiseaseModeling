@@ -59,9 +59,6 @@ def main():
     # Fit the algorithm to the data
     rf.fit(train_predictors, train_target)
 
-    # Metrics:
-    print("RANDOM FOREST METRICS: \n")
-
     # Perform feature selection
     selector = SelectKBest(f_classif, k='all')
     selector.fit(train_predictors, train_target)
@@ -71,6 +68,9 @@ def main():
     print("Univariate feature selection:")
     for feature, imp in zip(predictors, scores):
         print(feature, imp)
+
+    # Metrics:
+    print("RANDOM FOREST METRICS: \n")
 
     # Feature importances
     print("\nFeature importances:")
