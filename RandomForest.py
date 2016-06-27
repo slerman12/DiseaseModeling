@@ -1,12 +1,11 @@
-from sklearn import cross_validation
-from sklearn.cross_validation import train_test_split
 from sklearn.ensemble import RandomForestClassifier
+from sklearn import cross_validation
 from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.metrics import confusion_matrix, roc_auc_score
 import pandas as pd
 import numpy as np
 import re
 import operator
-from sklearn.metrics import roc_curve, auc, confusion_matrix
 
 
 def main():
@@ -98,23 +97,17 @@ def main():
     print("OOB score: ")
     print(rf.oob_score_)
 
-    # Output roc auc score
-    train['is_train'] = np.random.uniform(0, 1, len(train)) <= .75
-    traindata, validatedata = train[train['is_train']==True], train[train['is_train']==False]
-    x_traindata = traindata[predictors]
-    y_traindata = traindata["Survived"]
-    x_validatedata = validatedata[predictors]
-    y_validatedata = validatedata["Survived"]
-    rf.fit(x_traindata, y_traindata)
-    disbursed = rf.predict_proba(x_validatedata)
-    fpr, tpr, _ = roc_curve(y_validatedata, disbursed[:,1])
-    roc_auc = auc(fpr, tpr)
-    print("Roc_auc score (I don't fully understand this metric): ")
-    print(roc_auc)
+    # Split the data into a training set and a test set, and train the model
+    X_train, X_test, y_train, y_test = cross_validation.train_test_split(train_predictors, train_target, test_size=0.25, random_state=1)
+    rf.fit(X_train, y_train)
 
-    # Split the data into a training set and a test set, and print a confusion matrix
-    X_train, X_test, y_train, y_test = train_test_split(train_predictors, train_target, random_state=1)
-    y_pred = rf.fit(X_train, y_train).predict(X_test)
+    # Output roc auc score
+    disbursed = rf.predict_proba(X_test)
+    print("Roc_auc score:")
+    print(roc_auc_score(y_test, disbursed[:, 1]))
+
+    # Print a confusion matrix
+    y_pred = rf.predict(X_test)
     print("\nConfusion matrix (rows: actual, cols: prediction)")
     print(confusion_matrix(y_test, y_pred))
 

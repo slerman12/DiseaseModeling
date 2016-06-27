@@ -8,6 +8,7 @@ from sklearn.metrics import confusion_matrix, classification_report, accuracy_sc
 from sklearn.ensemble import VotingClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.svm import SVC
+from sklearn.grid_search import GridSearchCV
 import pandas as pd
 import numpy as np
 import warnings
