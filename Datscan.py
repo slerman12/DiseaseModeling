@@ -70,7 +70,7 @@ def main():
         print(feature, imp)
 
     # Metrics:
-    print("RANDOM FOREST METRICS: \n")
+    print("\nRANDOM FOREST METRICS:")
 
     # Feature importances
     print("\nFeature importances:")
