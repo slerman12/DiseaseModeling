@@ -82,8 +82,8 @@ def main():
     print(rf.score(train_predictors, train_target))
 
     # Out of bag estimate
-    print("OOB score: ")
-    print(rf.oob_score_)
+    # print("OOB score: ")
+    # print(rf.oob_score_)
 
     # Ensemble metrics
     print("\nENSEMBLE METRICS:\n")
@@ -96,7 +96,7 @@ def ensemble(rf, X, y):
     svm = SVC(probability=True)
     gnb = GaussianNB()
     knn = KNeighborsClassifier(n_neighbors=7)
-    gb = GradientBoostingClassifier(n_estimators=350)
+    gb = GradientBoostingClassifier(n_estimators=25, max_depth=3)
 
     # Ensemble
     # eclf = VotingClassifier(estimators=[('rf', rf), ('lr', lr), ('svm', svm), ('gnb', gnb), ('knn', knn), ('gb', gb)], voting='soft')
@@ -105,7 +105,7 @@ def ensemble(rf, X, y):
     # Cross validation accuracies
     print("Cross validation:\n")
     for clf, label in zip([rf, lr, svm, gnb, knn, gb, eclf], ['Random Forest', 'Logistic Regression', 'SVM', 'naive Bayes', 'kNN', 'Gradient Boosting', 'Ensemble of RF, LR, and SVM']):
-        scores = cross_validation.cross_val_score(clf, X, y, cv=2, scoring='accuracy')
+        scores = cross_validation.cross_val_score(clf, X, y, cv=4, scoring='accuracy')
         print("Accuracy: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
 
     # Split the data into a training set and a test set
