@@ -168,6 +168,8 @@ def ensemble(rf, X, y):
     cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
     print('Normalized confusion matrix:')
     print(cm_normalized)
+
+    # Plot normalized confusion matrix
     plt.figure()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
