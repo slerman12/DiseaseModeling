@@ -2,6 +2,7 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.ensemble import VotingClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.svm import SVC
 from sklearn import cross_validation
 from sklearn.feature_selection import SelectKBest, f_classif
@@ -46,12 +47,6 @@ def main():
     test.Fare = test[['Fare', 'Pclass']].apply(lambda x: classmeans[x['Pclass']] if pd.isnull(x['Fare']) else x['Fare'], axis=1)
     test["Cabin"] = test["Cabin"].fillna("Z")
 
-    # Discretize fare
-    # bins_and_binned_fare = pd.qcut(train.Fare, 10, retbins=True)
-    # bins = bins_and_binned_fare[1]
-    # train.Fare = bins_and_binned_fare[0]
-    # test.Fare = pd.cut(test.Fare, bins)
-
     # Generate new features
     new_features(train)
     new_features(test)
@@ -84,6 +79,22 @@ def main():
     # Add in Mother column
     test["Mother"] = 0
     test.loc[(test["Age"] > 18) & (test["Sex"] == 1) & (test["Parch"] > 0) & (test["Title"] != 2), "Mother"] = 1
+
+    def scale(data, features):
+        scaled = MinMaxScaler().fit_transform(data[features])
+        data[features] = scaled
+
+    # Normalize data
+    # scale(train, ["Fare"])
+    # scale(test, ["Fare"])
+
+    # Discretize Age
+    # train.loc[train["Age"] < 18, "Age"] = 0
+    # train.loc[train["Age"].between(18, 60), "Age"] = 1
+    # train.loc[train["Age"] > 60, "Age"] = 2
+    # test.loc[test["Age"] < 18, "Age"] = 0
+    # test.loc[test["Age"].between(18, 60), "Age"] = 1
+    # test.loc[test["Age"] > 60, "Age"] = 2
 
     # The columns we'll use to predict the target
     predictors = ["Pclass", "Sex", "Age", "Fare", "Embarked",

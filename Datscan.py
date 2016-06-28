@@ -1,14 +1,14 @@
 from sklearn.ensemble import RandomForestClassifier
 from sklearn import preprocessing, cross_validation
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, f_classif, RFE
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 from sklearn.ensemble import VotingClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.svm import SVC
-from sklearn.grid_search import GridSearchCV
 import pandas as pd
 import numpy as np
 import warnings
@@ -46,6 +46,13 @@ def main():
     # The columns we'll use to predict the target
     predictors = ["PATNO", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L"]
 
+    def scale(data, features):
+        scaled = MinMaxScaler().fit_transform(data[features])
+        data[features] = scaled
+
+    # Normalize the data
+    # scale(train, ["CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L"])
+
     # Prepare predictors
     train_predictors = train[predictors]
 
@@ -77,16 +84,22 @@ def main():
     for feature, imp in zip(predictors, rf.feature_importances_):
         print(feature, imp)
 
+    # Recursive feature elimination
+    # print("\nRecursive feature elimination:")
+    # rfe = RFE(rf, 5)
+    # rfe = rfe.fit(train_predictors, train_target)
+    # print(rfe.support_)
+    # print(rfe.ranking_)
+
     # Base estimate
     print("\nBase score: ")
     print(rf.score(train_predictors, train_target))
 
     # Out of bag estimate
-    # print("OOB score: ")
-    # print(rf.oob_score_)
+    print("OOB score: ")
+    print(rf.oob_score_)
 
     # Ensemble metrics
-    print("\nENSEMBLE METRICS:\n")
     ensemble(rf, train_predictors, train_target)
 
 
@@ -102,8 +115,15 @@ def ensemble(rf, X, y):
     # eclf = VotingClassifier(estimators=[('rf', rf), ('lr', lr), ('svm', svm), ('gnb', gnb), ('knn', knn), ('gb', gb)], voting='soft')
     eclf = VotingClassifier(estimators=[('rf', rf), ('lr', lr), ('svm', svm)], voting='soft')
 
+    print("\nENSEMBLE METRICS:")
+
+    # Feature importances
+    print("\nFeature importances:")
+    for feature, imp in zip(["PATNO", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L"], rf.feature_importances_):
+        print(feature, imp)
+
     # Cross validation accuracies
-    print("Cross validation:\n")
+    print("\nCross validation:\n")
     for clf, label in zip([rf, lr, svm, gnb, knn, gb, eclf], ['Random Forest', 'Logistic Regression', 'SVM', 'naive Bayes', 'kNN', 'Gradient Boosting', 'Ensemble of RF, LR, and SVM']):
         scores = cross_validation.cross_val_score(clf, X, y, cv=4, scoring='accuracy')
         print("Accuracy: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
