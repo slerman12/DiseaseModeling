@@ -35,7 +35,7 @@ def main():
 
     # Value counts for EVENT_ID after feature generation
     mL.describe_data(data=train, info=True, describe=True, value_counts=["EVENT_ID", "NP3BRADY_NEXT"],
-                     description="AFTER FEATURE GENERATION")
+                     description="AFTER FEATURE GENERATION:")
 
     # Predictors for the model
     predictors = ["TIME_PASSED", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L", "NP3BRADY_NOW"]
