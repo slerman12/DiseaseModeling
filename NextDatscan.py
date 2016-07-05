@@ -1,199 +1,122 @@
 from sklearn.ensemble import RandomForestClassifier
-from sklearn import preprocessing, cross_validation
-from sklearn.feature_selection import SelectKBest, f_classif, RFE
 from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
-from sklearn.ensemble import VotingClassifier
 from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.svm import SVC
 import pandas as pd
 import numpy as np
-import warnings
-import matplotlib.pyplot as plt
+import math
+import MachineLearning as mL
 
 
 def main():
     # Set seed
     np.random.seed(0)
 
-    # Create the training & test sets from files
-    train = pd.read_csv("data/all_visits_practice.csv")
+    # Create the training/test set(s) from file(s)
+    train = pd.read_csv("data/all_visits_practice_2.csv")
 
     # Preliminary data diagnostics
-    print("PRELIMINARY DATA DIAGNOSTICS:\n")
-    print("Info:")
-    print(train.info())
-    print("\nDescribe:")
-    print(train.describe())
-    # print("Unique EVENT_ID")
-    # print(train["EVENT_ID"].unique())
-    print("\nValue counts NP3BRADY:")
-    print(pd.value_counts(train["NP3BRADY"]))
-    print("")
+    mL.describe_data(data=train, describe=True, info=True, value_counts=["ONOFF", "NP3BRADY"],
+                     description="PRELIMINARY DATA DIAGNOSTICS:")
 
     # Encode EVENT_ID to numeric
-    train["EVENT_ID"] = preprocessing.LabelEncoder().fit_transform(train["EVENT_ID"])
+    mL.clean_data(data=train, encode_man={"EVENT_ID": {"SC": 0, "V04": 4, "V06": 6, "V10": 10}})
 
-    # Remove the class with only a single label
+    # Choose On or Off
+    train = train[train["ONOFF"] == 0]
+
+    # Remove the class with only a single sample
     train = train[train.NP3BRADY != 4]
 
     # Generate new features
-    new_features(train)
+    train = generate_features(train)
 
-    train = train[train.EVENT_ID < 3]
+    # Value counts for EVENT_ID after feature generation
+    mL.describe_data(data=train, info=True, describe=True, value_counts=["EVENT_ID", "NP3BRADY_NEXT"],
+                     description="AFTER FEATURE GENERATION")
 
-    # The columns we'll use to predict the target
-    predictors = ["PATNO", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L", "NP3BRADY_NOW"]
+    # Predictors for the model
+    predictors = ["TIME_PASSED", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L", "NP3BRADY_NOW"]
 
-    def scale(data, features):
-        scaled = MinMaxScaler().fit_transform(data[features])
-        data[features] = scaled
+    # Target for the model
+    target = "NP3BRADY_NEXT"
 
-    # Normalize the data
-    # scale(train, ["CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L"])
+    # Univariate feature selection
+    mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
 
-    # Prepare predictors
-    train_predictors = train[predictors]
+    # Algs for model
+    algs = [RandomForestClassifier(n_estimators=1000, min_samples_split=50, min_samples_leaf=2, oob_score=True),
+            LogisticRegression(),
+            SVC(probability=True),
+            GaussianNB(),
+            MultinomialNB(),
+            BernoulliNB(),
+            KNeighborsClassifier(n_neighbors=25),
+            GradientBoostingClassifier(n_estimators=10, max_depth=3)]
 
-    # Prepare target
-    train_target = train["NP3BRADY_NEXT"]
+    # Alg names for model
+    alg_names = ["Random Forest",
+                 "Logistic Regression",
+                 "SVM",
+                 "Gaussian Naive Bayes",
+                 "Multinomial Naive Bayes",
+                 "Bernoulli Naive Bayes",
+                 "kNN",
+                 "Gradient Boosting"]
 
-    # Create and train the random forest
-    # Multi-core CPUs can use: rf = RandomForestClassifier(n_estimators=100, n_jobs=2)
-    rf = RandomForestClassifier(n_estimators=350, min_samples_split=50, min_samples_leaf=25, oob_score=True)
+    # Ensemble
+    ens = mL.ensemble(algs=algs, alg_names=alg_names,
+                      ensemble_name="Weighted ensemble of RF, LR, SVM, GNB, KNN, and GB",
+                      in_ensemble=[True, True, True, True, False, False, True, True], weights=[3, 2, 1, 3, 1, 3],
+                      voting="soft")
 
-    # Fit the algorithm to the data
-    rf.fit(train_predictors, train_target)
+    # Add ensemble to algs and alg_names
+    algs.append(ens["alg"])
+    alg_names.append(ens["name"])
 
-    # Perform feature selection
-    selector = SelectKBest(f_classif, k='all')
-    selector.fit(train_predictors, train_target)
-
-    # Get the raw p-values for each feature, and transform from p-values into scores
-    scores = -np.log10(selector.pvalues_)
-    print("Univariate feature selection:")
-    for feature, imp in zip(predictors, scores):
-        print(feature, imp)
-
-    # Metrics:
-    print("\nRANDOM FOREST METRICS:")
-
-    # Feature importances
-    print("\nFeature importances:")
-    for feature, imp in zip(predictors, rf.feature_importances_):
-        print(feature, imp)
-
-    # Recursive feature elimination
-    # print("\nRecursive feature elimination:")
-    # rfe = RFE(rf, 5)
-    # rfe = rfe.fit(train_predictors, train_target)
-    # print(rfe.support_)
-    # print(rfe.ranking_)
-
-    # Base estimate
-    print("\nBase score: ")
-    print(rf.score(train_predictors, train_target))
-
-    # Out of bag estimate
-    print("OOB score: ")
-    print(rf.oob_score_)
-
-    # Ensemble metrics
-    ensemble(rf, train_predictors, train_target, predictors)
+    # Display ensemble metrics
+    mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+               feature_importances=[True], base_score=[True], oob_score=[True],
+               cross_val=[True, True, True, True, True, True, True, True, True],
+               split_accuracy=[True, True, True, True, True, True, True, True, True],
+               split_classification_report=[False, False, False, False, False, False, False, False, True],
+               split_confusion_matrix=[False, False, False, False, False, False, False, False, True])
 
 
-def new_features(data):
+def generate_features(data):
     # Generate NP3BRADY_NOW
     data["NP3BRADY_NOW"] = data["NP3BRADY"]
 
+    # Features in dataframe
+    features = ["PATNO", "TIME_PASSED", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L", "NP3BRADY_NOW",
+                "NP3BRADY_NEXT"]
+
+    # Create new dataframe
+    new_data = pd.DataFrame(columns=features)
+
+    # Function to build new data
     def set(row):
-        if row["EVENT_ID"] < 3:
-            row["NP3BRADY_NEXT"] = data.loc[(data["EVENT_ID"] == row["EVENT_ID"] + 1) & (data["PATNO"] == row["PATNO"]), "NP3BRADY_NOW"]
+        if row["EVENT_ID"] < 10:
+            for i in range(1, 11):
+                if any((data["EVENT_ID"] == row["EVENT_ID"] + i) & (data["PATNO"] == row["PATNO"])):
+                    row["NP3BRADY_NEXT"] = data.loc[(data["EVENT_ID"] == row["EVENT_ID"] + i) & (
+                        data["PATNO"] == row["PATNO"]), "NP3BRADY_NOW"].item()
+                    row["TIME_PASSED"] = i
+                    if not math.isnan(new_data.index.max()):
+                        new_data.loc[new_data.index.max() + 1] = row[features]
+                    else:
+                        new_data.loc[0] = row[features]
         return row
 
     # Generate NP3BRADY_NEXT
-    data["NP3BRADY_NEXT"] = 0
+    data["NP3BRADY_NEXT"] = -1
+    data["TIME_PASSED"] = -1
     data.apply(set, axis=1)
-    print("\nValue counts NP3BRADY_NEXT:")
-    print(pd.value_counts(data["NP3BRADY_NEXT"]))
 
-
-def ensemble(rf, X, y, predictors):
-    # Classifiers
-    lr = LogisticRegression()
-    svm = SVC(probability=True)
-    gnb = GaussianNB()
-    knn = KNeighborsClassifier(n_neighbors=7)
-    gb = GradientBoostingClassifier(n_estimators=25, max_depth=3)
-
-    # Ensemble
-    # eclf = VotingClassifier(estimators=[('rf', rf), ('lr', lr), ('svm', svm), ('gnb', gnb), ('knn', knn), ('gb', gb)], voting='soft')
-    eclf = VotingClassifier(estimators=[('rf', rf), ('lr', lr), ('svm', svm)], voting='soft')
-
-    print("\nENSEMBLE METRICS:")
-
-    # Feature importances
-    print("\nFeature importances:")
-    for feature, imp in zip(predictors, rf.feature_importances_):
-        print(feature, imp)
-
-    # Cross validation accuracies
-    print("\nCross validation:\n")
-    for clf, label in zip([rf, lr, svm, gnb, knn, gb, eclf], ['Random Forest', 'Logistic Regression', 'SVM', 'naive Bayes', 'kNN', 'Gradient Boosting', 'Ensemble of RF, LR, and SVM']):
-        scores = cross_validation.cross_val_score(clf, X, y, cv=4, scoring='accuracy')
-        print("Accuracy: %0.2f (+/- %0.2f) [%s]" % (scores.mean(), scores.std(), label))
-
-    # Split the data into a training set and a test set
-    X_train, X_test, y_train, y_test = cross_validation.train_test_split(X, y, test_size=0.25)
-    print("\n75/25 split: \n")
-    y_pred_ensemble = eclf.fit(X_train, y_train).predict(X_test)
-
-    # Accuracies
-    for clf, label in zip([rf, lr, svm, gnb, knn, gb, eclf], ['Random Forest', 'Logistic Regression', 'SVM', 'naive Bayes', 'kNN', 'Gradient Boosting', 'Ensemble of RF, LR, and SVM']):
-        y_pred = clf.fit(X_train, y_train).predict(X_test)
-        print("Accuracy: %0.2f [%s]" % (accuracy_score(y_test, y_pred), label))
-
-    # Classification report
-    print("\nClassification report:")
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        print(classification_report(y_test, y_pred_ensemble))
-
-    # Print a confusion matrix for ensemble
-    print("\nConfusion matrix of ensemble (rows: true, cols: pred)")
-
-    def plot_confusion_matrix(cm, title='Confusion matrix', cmap=plt.cm.Blues):
-        plt.imshow(cm, interpolation='nearest', cmap=cmap)
-        plt.title(title)
-        plt.colorbar()
-        tick_marks = np.arange(4)
-        plt.xticks(tick_marks, [0, 1, 2, 3], rotation=45)
-        plt.yticks(tick_marks, [0, 1, 2, 3])
-        plt.tight_layout()
-        plt.ylabel('True label')
-        plt.xlabel('Predicted label')
-
-    # Compute confusion matrix
-    cm = confusion_matrix(y_test, y_pred_ensemble)
-    np.set_printoptions(precision=2)
-    print('Confusion matrix, without normalization:')
-    print(cm)
-
-    # Normalize the confusion matrix by row (i.e by the number of samples in each class)
-    cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-    print('Normalized confusion matrix:')
-    print(cm_normalized)
-
-    # Plot normalized confusion matrix
-    plt.figure()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        plot_confusion_matrix(cm_normalized, title='Normalized confusion matrix')
-
-    plt.show()
+    # Return new data
+    return new_data
 
 
 if __name__ == "__main__":
