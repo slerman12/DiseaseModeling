@@ -1,4 +1,4 @@
-from sklearn import preprocessing, cross_validation
+from sklearn import preprocessing, cross_validation, clone
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
@@ -165,7 +165,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         print("Grid Search [{}]".format(name))
 
         # Run grid search
-        grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params)
+        grid_search = GridSearchCV(estimator=clone(alg).__init__, cv=folds, param_grid=params)
         grid_search.fit(data[predictors], data[target])
 
         # Print best parameters
@@ -233,7 +233,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                                                                              test_size=1.0 / folds)
 
         # Print ratio of split
-        split_name = "{}/{} split: ".format(100 - 100 / folds, 100 / folds)
+        split_name = "{}/{} split: ".format((100 - 100 / folds).astype(int), (100 / folds).astype(int))
 
         # Call respective methods
         if split_accuracy:
