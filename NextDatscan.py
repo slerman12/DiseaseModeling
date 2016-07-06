@@ -30,18 +30,19 @@ def main():
     # Remove the class with only a single sample
     train = train[train.NP3BRADY != 4]
 
-    # Generate new features
-    train = generate_features(train)
-
-    # Value counts for EVENT_ID after feature generation
-    mL.describe_data(data=train, info=True, describe=True, value_counts=["EVENT_ID", "NP3BRADY_NEXT"],
-                     description="AFTER FEATURE GENERATION:")
-
     # Predictors for the model
-    predictors = ["TIME_PASSED", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L", "NP3BRADY_NOW"]
+    predictors = ["TIME_PASSED", "VISIT_NOW", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L",
+                  "NP3BRADY_NOW"]
 
     # Target for the model
     target = "NP3BRADY_NEXT"
+
+    # Generate new features
+    train = generate_features(data=train, predictors=predictors, target=target, max_visit=train["EVENT_ID"].max())
+
+    # Value counts for EVENT_ID after feature generation
+    mL.describe_data(data=train, info=True, describe=True, value_counts=["VISIT_NOW", "NP3BRADY_NEXT"],
+                     description="AFTER FEATURE GENERATION:")
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
@@ -66,6 +67,7 @@ def main():
                  "kNN",
                  "Gradient Boosting"]
 
+    # Parameters for grid search
     grid_search_params = [{"n_estimators": [50, 500, 1000],
                            "min_samples_split": [25, 50, 75],
                            "min_samples_leaf": [2, 15, 25, 50]}]
@@ -86,39 +88,44 @@ def main():
                cross_val=[True, True, True, True, True, True, True, True, True],
                split_accuracy=[True, True, True, True, True, True, True, True, True],
                split_classification_report=[False, False, False, False, False, False, False, False, True],
-               split_confusion_matrix=[False, False, False, False, False, False, False, False, True],
-               grid_search_params=grid_search_params)
+               split_confusion_matrix=[False, False, False, False, False, False, False, False, True])
 
 
-def generate_features(data):
-    # Generate NP3BRADY_NOW
+def generate_features(data, predictors, target, max_visit):
+    # Set features
+    features = predictors + [target]
+
+    # Generate NP3BRADY_NOW and VISIT_NOW
     data["NP3BRADY_NOW"] = data["NP3BRADY"]
-
-    # Features in dataframe
-    features = ["PATNO", "TIME_PASSED", "EVENT_ID", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L", "NP3BRADY_NOW",
-                "NP3BRADY_NEXT"]
+    data["VISIT_NOW"] = data["EVENT_ID"]
 
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
 
-    # Function to build new data
-    def set(row):
-        if row["EVENT_ID"] < 10:
-            for i in range(1, 11):
-                if any((data["EVENT_ID"] == row["EVENT_ID"] + i) & (data["PATNO"] == row["PATNO"])):
-                    row["NP3BRADY_NEXT"] = data.loc[(data["EVENT_ID"] == row["EVENT_ID"] + i) & (
-                        data["PATNO"] == row["PATNO"]), "NP3BRADY_NOW"].item()
+    # Build new data (generate NP3BRADY_NEXT, VISIT_NEXT, and TIME_PASSED)
+    for index, row in data.iterrows():
+        # If now visit isn't the max
+        if row["VISIT_NOW"] < max_visit:
+            # For the range of all visits after this one
+            for i in range(1, max_visit + 1):
+                # If any future visit belongs to the same patient
+                if any((data["VISIT_NOW"] == row["VISIT_NOW"] + i) & (data["PATNO"] == row["PATNO"])):
+                    # Set next score
+                    row["NP3BRADY_NEXT"] = data.loc[(data["VISIT_NOW"] == row["VISIT_NOW"] + i) &
+                                                    (data["PATNO"] == row["PATNO"]), "NP3BRADY_NOW"].item()
+
+                    # Set next visit
+                    row["VISIT_NEXT"] = data.loc[(data["VISIT_NOW"] == row["VISIT_NOW"] + i) &
+                                                 (data["PATNO"] == row["PATNO"]), "VISIT_NOW"].item()
+
+                    # Set time passed
                     row["TIME_PASSED"] = i
+
+                    # Add row to new_data
                     if not math.isnan(new_data.index.max()):
                         new_data.loc[new_data.index.max() + 1] = row[features]
                     else:
                         new_data.loc[0] = row[features]
-        return row
-
-    # Generate NP3BRADY_NEXT
-    data["NP3BRADY_NEXT"] = -1
-    data["TIME_PASSED"] = -1
-    data.apply(set, axis=1)
 
     # Return new data
     return new_data

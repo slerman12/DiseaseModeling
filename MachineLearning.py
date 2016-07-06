@@ -1,4 +1,4 @@
-from sklearn import preprocessing, cross_validation, clone
+from sklearn import preprocessing, cross_validation
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
@@ -29,13 +29,13 @@ def describe_data(data, info=False, describe=False, value_counts=None, unique=No
     # Value counts
     if value_counts is not None:
         for feature in value_counts:
-            print("\nValue Counts " + feature + ":")
+            print("\nValue Counts [" + feature + "]")
             print(pd.value_counts(data[feature]))
 
     # Unique values
     if unique is not None:
         for feature in unique:
-            print("\nUnique " + feature + ":")
+            print("\nUnique [" + feature + "]")
             print(data[feature].unique())
 
     # Univariate feature selection
@@ -83,7 +83,7 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
 
 def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
             cross_val=None, folds=5, split_accuracy=None, split_classification_report=None, split_confusion_matrix=None,
-            plot=True, grid_search_params=None, description=None):
+            plot=True, grid_search_params=None, description="METRICS:"):
     # Feature importances
     def print_feature_importances(alg, name):
         print("Feature Importances [" + name + "]")
@@ -165,17 +165,16 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         print("Grid Search [{}]".format(name))
 
         # Run grid search
-        grid_search = GridSearchCV(estimator=set_params(clone(alg)), cv=folds, param_grid=params)
+        grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params)
         grid_search.fit(data[predictors], data[target])
 
-        # Print best parameters
+        # Print best parameters and score
         print(grid_search.best_params_)
+        print("Cross Validation: {}".format(grid_search.best_score_))
 
     # Print description of metrics
     if description is not None:
         print("\n" + description)
-    else:
-        print("\nMETRICS:")
 
     # Fit algorithms /just once/ for base score and oob score (as opposed to redundantly refitting)
     if base_score is not None or oob_score is not None:
@@ -233,7 +232,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                                                                              test_size=1.0 / folds)
 
         # Print ratio of split
-        split_name = "{:g}/{:g} split: ".format(100 - 100 / folds, 100 / folds)
+        split_name = "{:g}/{:g} Split: ".format(100 - 100 / folds, 100 / folds)
 
         # Call respective methods
         if split_accuracy:
@@ -260,13 +259,13 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                 print_grid_search(algs[i], alg_names[i], val)
 
 
-def ensemble(algs, alg_names, grid_search_params=None, folds=5, ensemble_name=None, in_ensemble=None, weights=None, voting="soft"):
+def ensemble(algs, alg_names, ensemble_name=None, in_ensemble=None, weights=None, voting="soft"):
     # Estimators for the ensemble
     estimators = []
 
     # Construct ensemble name
     if weights is not None:
-        name = "Weighted ensemble of "
+        name = "Weighted Ensemble of "
     else:
         name = "Ensemble of "
 
