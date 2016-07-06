@@ -1,5 +1,6 @@
 from sklearn import preprocessing, cross_validation
 from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.grid_search import GridSearchCV
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 from sklearn.ensemble import VotingClassifier
 from sklearn.preprocessing import MinMaxScaler
@@ -80,10 +81,9 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
         data[scale_features] = MinMaxScaler().fit_transform(data[scale_features])
 
 
-def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None, cross_val=None, folds=5,
-            split_accuracy=None, split_classification_report=None, split_confusion_matrix=None, plot=True,
-            description=None):
-
+def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
+            cross_val=None, folds=5, split_accuracy=None, split_classification_report=None, split_confusion_matrix=None,
+            plot=True, grid_search_params=None, description=None):
     # Feature importances
     def print_feature_importances(alg, name):
         print("Feature Importances [" + name + "]")
@@ -158,6 +158,18 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
             # Show confusion matrix plots
             plt.show()
+
+    # Grid search
+    def print_grid_search(alg, name, params):
+        # Print algorithm being grid searched
+        print("Grid Search [{}]".format(name))
+
+        # Run grid search
+        grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params)
+        grid_search.fit(data[predictors], data[target])
+
+        # Print best parameters
+        print(grid_search.best_params_)
 
     # Print description of metrics
     if description is not None:
@@ -240,8 +252,15 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                 if val:
                     print_split_confusion_matrix(algs[i], alg_names[i], X_train, X_test, y_train, y_test, plot)
 
+    # Finish calling respective methods
+    if grid_search_params is not None:
+        print("")
+        for i, val in enumerate(grid_search_params):
+            if val is not None:
+                print_grid_search(algs[i], alg_names[i], val)
 
-def ensemble(algs, alg_names, ensemble_name=None, in_ensemble=None, weights=None, voting="soft"):
+
+def ensemble(algs, alg_names, grid_search_params=None, folds=5, ensemble_name=None, in_ensemble=None, weights=None, voting="soft"):
     # Estimators for the ensemble
     estimators = []
 

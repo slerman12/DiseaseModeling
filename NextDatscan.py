@@ -66,6 +66,10 @@ def main():
                  "kNN",
                  "Gradient Boosting"]
 
+    grid_search_params = [{"n_estimators": [50, 500, 1000],
+                           "min_samples_split": [25, 50, 75],
+                           "min_samples_leaf": [2, 15, 25, 50]}]
+
     # Ensemble
     ens = mL.ensemble(algs=algs, alg_names=alg_names,
                       ensemble_name="Weighted ensemble of RF, LR, SVM, GNB, KNN, and GB",
@@ -82,7 +86,8 @@ def main():
                cross_val=[True, True, True, True, True, True, True, True, True],
                split_accuracy=[True, True, True, True, True, True, True, True, True],
                split_classification_report=[False, False, False, False, False, False, False, False, True],
-               split_confusion_matrix=[False, False, False, False, False, False, False, False, True])
+               split_confusion_matrix=[False, False, False, False, False, False, False, False, True],
+               grid_search_params=grid_search_params)
 
 
 def generate_features(data):
