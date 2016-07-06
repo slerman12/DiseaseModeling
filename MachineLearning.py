@@ -165,7 +165,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         print("Grid Search [{}]".format(name))
 
         # Run grid search
-        grid_search = GridSearchCV(estimator=clone(alg).__init__, cv=folds, param_grid=params)
+        grid_search = GridSearchCV(estimator=set_params(clone(alg)), cv=folds, param_grid=params)
         grid_search.fit(data[predictors], data[target])
 
         # Print best parameters
@@ -233,7 +233,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                                                                              test_size=1.0 / folds)
 
         # Print ratio of split
-        split_name = "{}/{} split: ".format((100 - 100 / folds).astype(int), (100 / folds).astype(int))
+        split_name = "{:g}/{:g} split: ".format(100 - 100 / folds, 100 / folds)
 
         # Call respective methods
         if split_accuracy:
