@@ -55,8 +55,13 @@ def main():
             morning_observations = observations[observations["ampm"] == "M"]
             night_observations = observations[observations["ampm"] == "N"]
 
+            # Find last sit observation
+
+            # Find first stand observation
+
             # Iterate by a day
             time = time + Day(1)
+
 
 
 if __name__ == "__main__":
