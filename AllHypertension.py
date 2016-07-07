@@ -61,6 +61,10 @@ def main():
                 (row_observations["state"] == "stand") & (row_observations[
                                                               "timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
 
+            # TODO Delete
+            # For testing
+            print("TEST: {}".format(next_stand_date_time_local))
+
             # If next stand exists
             if next_stand_date_time_local is not None:
                 # Did both sit and stand
