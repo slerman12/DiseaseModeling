@@ -24,11 +24,6 @@ def main():
         first_dawn = pd.Timestamp(first_date_time.date() + pd.DateOffset(hours=4, minutes=24))
         last_dawn = pd.Timestamp(last_date_time.date() + pd.DateOffset(hours=4, minutes=24))
 
-        # TODO: Delete
-        # For testing, print patient's first dawn and last dawn
-        print(first_dawn)
-        print(last_dawn)
-
         # Previous dawn
         if first_date_time < first_dawn:
             first_dawn = first_dawn - Day(1)
@@ -60,10 +55,6 @@ def main():
             next_stand_date_time_central = row_observations.loc[
                 (row_observations["state"] == "stand") & (row_observations[
                                                               "timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
-
-            # TODO Delete
-            # For testing
-            print("TEST: {}".format(next_stand_date_time_local))
 
             # If next stand exists
             if next_stand_date_time_local is not None and pd.notnull(next_stand_date_time_local):
@@ -136,10 +127,6 @@ def main():
                 row["DATE_TIME_LOCAL_STAND"] = None
                 row["DATE_TIME_CENTRAL_STAND"] = None
 
-        # TODO: Delete
-        # Print row for testing
-        print(row)
-
         # Add rows to new_data
         max_index = result.index.max()
         for key in row.keys():
@@ -150,10 +137,6 @@ def main():
 
     # Iterate through each patient
     for patient in data["id"].unique()[:5]:
-        # TODO: Delete
-        # For testing, print patient id
-        print("PATIENT: {}".format(patient))
-
         # Initialize time as first dawn before earliest observation
         time, last_time = find_first_last_dawn(data.loc[data["id"] == patient, "date_time_local"].min(),
                                                data.loc[data["id"] == patient, "date_time_local"].max())
@@ -191,6 +174,9 @@ def main():
 
             # Iterate by a day
             time = time + Day(1)
+
+    print("Total noncompliance: {1}/{2} [{1/2}]".format(len(result[result["COMPLIANCE"] == 0].index),
+                                                        len(result.count().index)))
 
     # Output results to csv
     result.to_csv("data/All_Hypertension_Results.csv", index=False)
