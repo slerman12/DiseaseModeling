@@ -136,7 +136,7 @@ def main():
                 result.loc[0, key] = row[key]
 
     # Iterate through each patient
-    for patient in data["id"].unique()[:5]:
+    for patient in data["id"].unique():
         # Initialize time as first dawn before earliest observation
         time, last_time = find_first_last_dawn(data.loc[data["id"] == patient, "date_time_local"].min(),
                                                data.loc[data["id"] == patient, "date_time_local"].max())
@@ -175,8 +175,11 @@ def main():
             # Iterate by a day
             time = time + Day(1)
 
-    print("Total noncompliance: {1}/{2} [{1/2}]".format(len(result[result["COMPLIANCE"] == 0].index),
-                                                        len(result.count().index)))
+    # Print stats
+    print("Total noncompliance: {}/{} [{:.2%}]".format(len(result[result["COMPLIANCE"] == 0].index),
+                                                       len(result.index),
+                                                       len(result[result["COMPLIANCE"] == 0].index) /
+                                                       len(result.index)))
 
     # Output results to csv
     result.to_csv("data/All_Hypertension_Results.csv", index=False)
