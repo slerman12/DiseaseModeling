@@ -24,6 +24,7 @@ def main():
         first_dawn = pd.Timestamp(first_date_time.date() + pd.DateOffset(hours=4, minutes=24))
         last_dawn = pd.Timestamp(last_date_time.date() + pd.DateOffset(hours=4, minutes=24))
 
+        # TODO: Delete
         # For testing, print patient's first dawn and last dawn
         print(first_dawn)
         print(last_dawn)
@@ -50,23 +51,88 @@ def main():
         first_sit_date_time_central = row_observations.loc[
             row_observations["state"] == "sit", "timeOfDay_central"].min()
 
-        # Find local and central times of next stand observation for row row
-        next_stand_date_time_local = row_observations.loc[
-            (row_observations["state"] == "stand") & (row_observations[
-                                                          "date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
-        next_stand_date_time_central = row_observations.loc[
-            (row_observations["state"] == "stand") & (row_observations[
-                                                          "timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
+        # If first sit exists
+        if first_sit_date_time_local is not None:
+            # Find local and central times of next stand observation for row
+            next_stand_date_time_local = row_observations.loc[
+                (row_observations["state"] == "stand") & (row_observations[
+                                                              "date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
+            next_stand_date_time_central = row_observations.loc[
+                (row_observations["state"] == "stand") & (row_observations[
+                                                              "timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
 
-        # Set sit/stand times for row row
-        row["DATE_TIME_LOCAL_SIT"] = first_sit_date_time_local
-        row["DATE_TIME_LOCAL_STAND"] = next_stand_date_time_local
-        row["DATE_TIME_CENTRAL_SIT"] = first_sit_date_time_central
-        row["DATE_TIME_CENTRAL_STAND"] = next_stand_date_time_central
+            # If next stand exists
+            if next_stand_date_time_local is not None:
+                # Did both sit and stand
 
-        # Set time difference
-        row["TIME_DIFF"] = next_stand_date_time_local - first_sit_date_time_local
+                # Fill stand data
+                row["DATE_TIME_LOCAL_STAND"] = next_stand_date_time_local
+                row["DATE_TIME_CENTRAL_STAND"] = next_stand_date_time_central
 
+                # Find preceding sit
+                prev_sit_date_time_local = row_observations.loc[
+                    (row_observations["state"] == "sit") & (row_observations[
+                                                                "date_time_local"] < next_stand_date_time_local), "date_time_local"].max()
+                prev_sit_date_time_central = row_observations.loc[
+                    (row_observations["state"] == "sit") & (row_observations[
+                                                                "timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
+
+                # Fill sit data
+                row["DATE_TIME_LOCAL_SIT"] = prev_sit_date_time_local
+                row["DATE_TIME_CENTRAL_SIT"] = prev_sit_date_time_central
+
+                # Set time difference
+                row["TIME_DIFF"] = next_stand_date_time_local - first_sit_date_time_local
+
+                # Complying
+                row["COMPLIANCE"] = 1
+            else:
+                # Skipped stand
+
+                # Fill sit data
+                row["DATE_TIME_LOCAL_SIT"] = first_sit_date_time_local
+                row["DATE_TIME_CENTRAL_SIT"] = first_sit_date_time_central
+
+                # Fill stand as NA
+                row["DATE_TIME_LOCAL_STAND"] = None
+                row["DATE_TIME_CENTRAL_STAND"] = None
+
+                # No time diff
+                row["TIME_DIFF"] = None
+
+                # Noncomplying
+                row["COMPLIANCE"] = 0
+        else:
+            # Skipped sit
+
+            # Fill sit as NA
+            row["DATE_TIME_LOCAL_SIT"] = None
+            row["DATE_TIME_CENTRAL_SIT"] = None
+
+            # No time diff
+            row["TIME_DIFF"] = None
+
+            # Noncomplying
+            row["COMPLIANCE"] = 0
+
+            # Find local and central times of first stand
+            first_stand_date_time_local = row_observations.loc[
+                row_observations["state"] == "stand", "date_time_local"].min()
+            first_stand_date_time_central = row_observations.loc[
+                row_observations["state"] == "stand", "timeOfDay_central"].min()
+
+            if first_sit_date_time_local is not None:
+                # Fill first stand data
+                row["DATE_TIME_LOCAL_STAND"] = first_stand_date_time_local
+                row["DATE_TIME_CENTRAL_STAND"] = first_stand_date_time_central
+            else:
+                # Skipped both sit and stand
+
+                # Fill stand as NA
+                row["DATE_TIME_LOCAL_STAND"] = None
+                row["DATE_TIME_CENTRAL_STAND"] = None
+
+        # TODO: Delete
         # Print row for testing
         print(row)
 
@@ -79,6 +145,7 @@ def main():
 
     # Iterate through each patient
     for patient in data["id"].unique()[:5]:
+        # TODO: Delete
         # For testing, print patient id
         print("PATIENT: {}".format(patient))
 
@@ -97,8 +164,6 @@ def main():
             # Initialize morning and night rows to be appended to result
             morning_row = {}
             night_row = {}
-
-            # print((data["id"] == patient) & (data["date_time_local"].between(time, time + Day(1))))
 
             # Observations of this patient on this time interval
             observations = data[(data["id"] == patient) & (data["date_time_local"].between(time, time + Day(1)))]
@@ -121,6 +186,9 @@ def main():
 
             # Iterate by a day
             time = time + Day(1)
+
+    # Output results to csv
+    result.to_csv("data/All_Hypertension_Results.csv", index=False)
 
 
 if __name__ == "__main__":
