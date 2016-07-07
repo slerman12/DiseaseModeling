@@ -2,6 +2,8 @@ import math
 import pandas as pd
 from pandas.tseries.offsets import Day
 import numpy as np
+import matplotlib.mlab as mlab
+import matplotlib.pyplot as plt
 
 
 def main():
@@ -180,6 +182,12 @@ def main():
                                                        len(result.index),
                                                        len(result[result["COMPLIANCE"] == 0].index) /
                                                        len(result.index)))
+
+    # Print histogram
+    # result.groupby([result["TIME_DIFF"].dt.minute, result["TIME_DIFF"].dt.second]).count().plot(kind="bar")
+    result["TIME_DIFF"].hist(bins=xrange(0, 100, 1))
+    plt.xlabel('Time between reading (min)')
+    plt.ylabel('# of observations')
 
     # Output results to csv
     result.to_csv("data/All_Hypertension_Results.csv", index=False)
