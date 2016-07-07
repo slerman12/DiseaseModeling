@@ -1,7 +1,6 @@
 import pandas as pd
 from pandas.tseries.offsets import Day
 import numpy as np
-from pandas.tslib import Timedelta
 
 
 def main():
@@ -20,6 +19,7 @@ def main():
         first_dawn = pd.Timestamp(first_date_time.date() + pd.DateOffset(hours=4, minutes=24))
         last_dawn = pd.Timestamp(last_date_time.date() + pd.DateOffset(hours=4, minutes=24))
 
+        # For testing, print patient's first dawn and last dawn
         print(first_dawn)
         print(last_dawn)
 
@@ -39,8 +39,10 @@ def main():
 
     # Iterate through each patient
     for patient in data["id"].unique():
-        # Initialize time as first dawn before earliest observation
+        # For testing, print patient id
         print("PATIENT: {}".format(patient))
+
+        # Initialize time as first dawn before earliest observation
         time, last_time = find_first_last_dawn(data.loc[data["id"] == patient, "date_time_local"].min(),
                                                data.loc[data["id"] == patient, "date_time_local"].max())
 
