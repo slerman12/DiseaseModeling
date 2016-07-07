@@ -17,8 +17,8 @@ def main():
     # Convert datetimes to pandas datetimes
     data["date_time_local"] = pd.to_datetime(data["date_time_local"])
 
-    # Find previous dawn before a time
-    def find_previous_dawn(first_date_time, last_date_time):
+    # Find previous dawn before a time, and next dawn after another time
+    def find_first_last_dawn(first_date_time, last_date_time):
         # First day's dawn and last day's dawn
         first_dawn = pd.Timestamp(first_date_time.date + " " + dawn)
         last_dawn = pd.Timestamp(last_date_time.date + " " + dawn)
@@ -35,17 +35,22 @@ def main():
         return first_dawn, last_dawn
 
     # Dataframe for storing final result
-    results = pd.DataFrame(columns=[])
+    result = pd.DataFrame(columns=[])
 
     # Iterate through each patient
     for patient in data["id"].unique():
         # Initialize time as first dawn before earliest observation
-        time, last_time = find_previous_dawn(data.loc[data["id"] == patient, "date_time_local"].min())
+        time, last_time = find_first_last_dawn(data.loc[data["id"] == patient, "date_time_local"].min(),
+                                               data.loc[data["id"] == patient, "date_time_local"].max())
 
         # Iterate by 24 hour periods from dawn to dawn
         while time != last_time:
             # Observations of this patient on this time interval
             observations = data[data["id"] == patient & data["date_time_local"].between(time, time + Day(1))]
+
+            # Divide the observations into morning and night
+            morning_observations = observations[observations["ampm"] == "M"]
+            night_observations = observations[observations["ampm"] == "N"]
 
             # Iterate by a day
             time = time + Day(1)
