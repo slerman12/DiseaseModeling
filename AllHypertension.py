@@ -137,9 +137,10 @@ def main():
         print(row)
 
         # Add rows to new_data
+        max_index = result.index.max()
         for key in row.keys():
-            if not math.isnan(result.index.max()):
-                result.loc[result.index.max() + 1, key] = row[key]
+            if not math.isnan(max_index):
+                result.loc[max_index + 1, key] = row[key]
             else:
                 result.loc[0, key] = row[key]
 
