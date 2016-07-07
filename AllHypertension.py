@@ -34,6 +34,9 @@ def main():
         # Return first and last dawn
         return first_dawn, last_dawn
 
+    # Dataframe for storing final result
+    results = pd.DataFrame(columns=[])
+
     # Iterate through each patient
     for patient in data["id"].unique():
         # Initialize time as first dawn before earliest observation
@@ -46,7 +49,6 @@ def main():
 
             # Iterate by a day
             time = time + Day(1)
-
 
 
 if __name__ == "__main__":
