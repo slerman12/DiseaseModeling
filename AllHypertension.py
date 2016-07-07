@@ -52,7 +52,7 @@ def main():
             row_observations["state"] == "sit", "timeOfDay_central"].min()
 
         # If first sit exists
-        if first_sit_date_time_local is not None:
+        if first_sit_date_time_local is not None and first_sit_date_time_local.notnull():
             # Find local and central times of next stand observation for row
             next_stand_date_time_local = row_observations.loc[
                 (row_observations["state"] == "stand") & (row_observations[
@@ -66,7 +66,7 @@ def main():
             print("TEST: {}".format(next_stand_date_time_local))
 
             # If next stand exists
-            if next_stand_date_time_local is not None:
+            if next_stand_date_time_local is not None and next_stand_date_time_local.notnull():
                 # Did both sit and stand
 
                 # Fill stand data
@@ -125,7 +125,7 @@ def main():
             first_stand_date_time_central = row_observations.loc[
                 row_observations["state"] == "stand", "timeOfDay_central"].min()
 
-            if first_sit_date_time_local is not None:
+            if first_sit_date_time_local is not None and first_sit_date_time_local.notnull():
                 # Fill first stand data
                 row["DATE_TIME_LOCAL_STAND"] = first_stand_date_time_local
                 row["DATE_TIME_CENTRAL_STAND"] = first_stand_date_time_central
