@@ -11,18 +11,17 @@ def main():
     # Create the dataframe from file
     data = pd.read_csv("data/all_bp.csv")
 
-    # Set dawn and dusk constants
-    dawn = pd.Timestamp("04:24:00")
-    dusk = pd.Timestamp("15:40:00")
-
     # Convert datetimes to pandas datetimes
     data["date_time_local"] = pd.to_datetime(data["date_time_local"])
 
     # Find previous dawn before a time, and next dawn after another time
     def find_first_last_dawn(first_date_time, last_date_time):
         # First day's dawn and last day's dawn
-        first_dawn = pd.Timestamp(first_date_time.date + Timedelta(dawn))
-        last_dawn = pd.Timestamp(last_date_time.date + Timedelta(dawn))
+        first_dawn = pd.Timestamp(first_date_time.date() + pd.DateOffset(hours=4, minutes=24))
+        last_dawn = pd.Timestamp(last_date_time.date() + pd.DateOffset(hours=4, minutes=24))
+
+        print(first_dawn)
+        print(last_dawn)
 
         # Previous dawn
         if first_date_time < first_dawn:
@@ -41,6 +40,7 @@ def main():
     # Iterate through each patient
     for patient in data["id"].unique():
         # Initialize time as first dawn before earliest observation
+        print("PATIENT: {}".format(patient))
         time, last_time = find_first_last_dawn(data.loc[data["id"] == patient, "date_time_local"].min(),
                                                data.loc[data["id"] == patient, "date_time_local"].max())
 
