@@ -1,6 +1,7 @@
 import pandas as pd
 from pandas.tseries.offsets import Day
 import numpy as np
+from pandas.tslib import Timedelta
 
 
 def main():
@@ -20,8 +21,8 @@ def main():
     # Find previous dawn before a time, and next dawn after another time
     def find_first_last_dawn(first_date_time, last_date_time):
         # First day's dawn and last day's dawn
-        first_dawn = pd.Timestamp(first_date_time.date + " " + dawn)
-        last_dawn = pd.Timestamp(last_date_time.date + " " + dawn)
+        first_dawn = pd.Timestamp(first_date_time.date + Timedelta(dawn))
+        last_dawn = pd.Timestamp(last_date_time.date + Timedelta(dawn))
 
         # Previous dawn
         if first_date_time < first_dawn:
