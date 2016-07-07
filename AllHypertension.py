@@ -48,7 +48,7 @@ def main():
         first_sit_date_time_local = row_observations.loc[
             row_observations["state"] == "sit", "date_time_local"].min()
         first_sit_date_time_central = row_observations.loc[
-            row_observations["state"] == "sit", "date_time_central"].min()
+            row_observations["state"] == "sit", "timeOfDay_central"].min()
 
         # Find local and central times of next stand observation for row row
         next_stand_date_time_local = row_observations.loc[
@@ -56,7 +56,7 @@ def main():
                                                           "date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
         next_stand_date_time_central = row_observations.loc[
             (row_observations["state"] == "stand") & (row_observations[
-                                                          "date_time_central"] > first_sit_date_time_central), "date_time_central"].min()
+                                                          "timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
 
         # Set sit/stand times for row row
         row["DATE_TIME_LOCAL_SIT"] = first_sit_date_time_local
@@ -67,14 +67,18 @@ def main():
         # Set time difference
         row["TIME_DIFF"] = next_stand_date_time_local - first_sit_date_time_local
 
+        # Print row for testing
+        print(row)
+
         # Add rows to new_data
-        if not math.isnan(result.index.max()):
-            result.loc[result.index.max() + 1] = row
-        else:
-            result.loc[0] = row
+        for key in row.keys():
+            if not math.isnan(result.index.max()):
+                result.loc[result.index.max() + 1, key] = row[key]
+            else:
+                result.loc[0, key] = row[key]
 
     # Iterate through each patient
-    for patient in data["id"].unique():
+    for patient in data["id"].unique()[:5]:
         # For testing, print patient id
         print("PATIENT: {}".format(patient))
 
@@ -91,11 +95,13 @@ def main():
             day_count += 1
 
             # Initialize morning and night rows to be appended to result
-            morning_row = pd.DataFrame(columns=columns)[0]
-            night_row = pd.DataFrame(columns=columns)[0]
+            morning_row = {}
+            night_row = {}
+
+            # print((data["id"] == patient) & (data["date_time_local"].between(time, time + Day(1))))
 
             # Observations of this patient on this time interval
-            observations = data[data["id"] == patient & data["date_time_local"].between(time, time + Day(1))]
+            observations = data[(data["id"] == patient) & (data["date_time_local"].between(time, time + Day(1)))]
 
             # Divide the observations into morning and night
             morning_observations = observations[observations["ampm"] == "M"]
