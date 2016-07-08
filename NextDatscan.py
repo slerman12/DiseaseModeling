@@ -32,16 +32,17 @@ def main():
 
     # Predictors for the model
     predictors = ["TIME_PASSED", "VISIT_NOW", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L",
-                  "NP3BRADY_NOW"]
+                  "SCORE_NOW"]
 
     # Target for the model
-    target = "NP3BRADY_NEXT"
+    target = "SCORE_NEXT"
 
     # Generate new features
-    train = generate_features(data=train, predictors=predictors, target=target, max_visit=train["EVENT_ID"].max())
+    train = generate_features(data=train, predictors=predictors, target=target, id_name="PATNO", score_name="NP3BRADY",
+                              visit_name="EVENT_ID")
 
     # Value counts for EVENT_ID after feature generation
-    mL.describe_data(data=train, info=True, describe=True, value_counts=["VISIT_NOW", "NP3BRADY_NEXT"],
+    mL.describe_data(data=train, info=True, describe=True, value_counts=["VISIT_NOW", "SCORE_NEXT"],
                      description="AFTER FEATURE GENERATION:")
 
     # Univariate feature selection
@@ -91,13 +92,16 @@ def main():
                split_confusion_matrix=[False, False, False, False, False, False, False, False, True])
 
 
-def generate_features(data, predictors, target, max_visit):
+def generate_features(data, predictors, target, id_name, score_name, visit_name):
     # Set features
     features = predictors + [target]
 
-    # Generate NP3BRADY_NOW and VISIT_NOW
-    data["NP3BRADY_NOW"] = data["NP3BRADY"]
-    data["VISIT_NOW"] = data["EVENT_ID"]
+    # Set max visit
+    max_visit = data[visit_name].max()
+
+    # Generate SCORE_NOW and VISIT_NOW
+    data["SCORE_NOW"] = data[score_name]
+    data["VISIT_NOW"] = data[visit_name]
 
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
@@ -109,14 +113,14 @@ def generate_features(data, predictors, target, max_visit):
             # For the range of all visits after this one
             for i in range(1, max_visit + 1):
                 # If any future visit belongs to the same patient
-                if any((data["VISIT_NOW"] == row["VISIT_NOW"] + i) & (data["PATNO"] == row["PATNO"])):
+                if any((data["VISIT_NOW"] == row["VISIT_NOW"] + i) & (data[id_name] == row[id_name])):
                     # Set next score
-                    row["NP3BRADY_NEXT"] = data.loc[(data["VISIT_NOW"] == row["VISIT_NOW"] + i) &
-                                                    (data["PATNO"] == row["PATNO"]), "NP3BRADY_NOW"].item()
+                    row["SCORE_NEXT"] = data.loc[(data["VISIT_NOW"] == row["VISIT_NOW"] + i) &
+                                                 (data[id_name] == row[id_name]), "SCORE_NOW"].item()
 
                     # Set next visit
                     row["VISIT_NEXT"] = data.loc[(data["VISIT_NOW"] == row["VISIT_NOW"] + i) &
-                                                 (data["PATNO"] == row["PATNO"]), "VISIT_NOW"].item()
+                                                 (data[id_name] == row[id_name]), "VISIT_NOW"].item()
 
                     # Set time passed
                     row["TIME_PASSED"] = i
