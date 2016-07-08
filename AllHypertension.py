@@ -182,12 +182,17 @@ def main():
                                                        len(result.index),
                                                        len(result[result["COMPLIANCE"] == 0].index) /
                                                        len(result.index)))
+    timedeltas = pd.to_timedelta(result["TIME_DIFF"])
+    print("Mean time diff (Seconds): {}".format(timedeltas.dt.seconds.mean()))
+    print("Max time diff (Seconds): {}".format(timedeltas.dt.seconds.max()))
+    print("Min time diff (Seconds): {}".format(timedeltas.dt.seconds.min()))
 
     # Print histogram
-    # result.groupby([result["TIME_DIFF"].dt.minute, result["TIME_DIFF"].dt.second]).count().plot(kind="bar")
-    result["TIME_DIFF"].hist(bins=xrange(0, 100, 1))
-    plt.xlabel('Time between reading (min)')
-    plt.ylabel('# of observations')
+    timedeltas.dt.seconds.plot(kind="hist")
+    plt.xlabel("Time Diff (Seconds)")
+    plt.ylabel("Number of Observations")
+    plt.show()
+
 
     # Output results to csv
     result.to_csv("data/All_Hypertension_Results.csv", index=False)
