@@ -191,13 +191,14 @@ def stats():
                                                        len(result.index),
                                                        len(result[result["COMPLIANCE"] == 0].index) /
                                                        len(result.index)))
-    print("Mean time diff (Seconds): {}".format(result["TIME_DIFF"].mean()))
-    print("Max time diff (Seconds): {}".format(result["TIME_DIFF"].max()))
-    print("Min time diff (Seconds): {}".format(result["TIME_DIFF"].min()))
+    print("Mean time diff (Minutes): {}".format(result["TIME_DIFF"].mean()))
+    print("Max time diff (Minutes): {}".format(result["TIME_DIFF"].max()))
+    print("Min time diff (Minutes): {}".format(result["TIME_DIFF"].min()))
 
     # Print histogram
-    result["TIME_DIFF"].plot(kind="hist", bins=range(0, 15, 1), facecolor="pink")
-    plt.xlabel("Time Diff (Minutes)")
+    result["TIME_DIFF"].plot(kind="hist", bins=range(0, 10, 1), facecolor="pink")
+    plt.axis([0, 10, 0, 15000])
+    plt.xlabel("Time Difference (Minutes)")
     plt.ylabel("Number of Observations")
     plt.show()
 
