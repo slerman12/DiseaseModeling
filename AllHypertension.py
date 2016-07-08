@@ -2,7 +2,6 @@ import math
 import pandas as pd
 from pandas.tseries.offsets import Day
 import numpy as np
-import matplotlib.mlab as mlab
 import matplotlib.pyplot as plt
 
 
@@ -177,26 +176,31 @@ def main():
             # Iterate by a day
             time = time + Day(1)
 
-    # Print stats
-    print("Total noncompliance: {}/{} [{:.2%}]".format(len(result[result["COMPLIANCE"] == 0].index),
-                                                       len(result.index),
-                                                       len(result[result["COMPLIANCE"] == 0].index) /
-                                                       len(result.index)))
-    timedeltas = pd.to_timedelta(result["TIME_DIFF"])
-    print("Mean time diff (Seconds): {}".format(timedeltas.dt.seconds.mean()))
-    print("Max time diff (Seconds): {}".format(timedeltas.dt.seconds.max()))
-    print("Min time diff (Seconds): {}".format(timedeltas.dt.seconds.min()))
-
-    # Print histogram
-    timedeltas.dt.seconds.plot(kind="hist")
-    plt.xlabel("Time Diff (Seconds)")
-    plt.ylabel("Number of Observations")
-    plt.show()
-
+    # Output result with time diffs as minutes
+    result["TIME_DIFF"] = pd.to_timedelta(result["TIME_DIFF"]).dt.seconds / 60
 
     # Output results to csv
     result.to_csv("data/All_Hypertension_Results.csv", index=False)
 
 
+def stats():
+    result = pd.read_csv("data/All_Hypertension_Results.csv")
+
+    # Print stats
+    print("Total noncompliance: {}/{} [{:.2%}]".format(len(result[result["COMPLIANCE"] == 0].index),
+                                                       len(result.index),
+                                                       len(result[result["COMPLIANCE"] == 0].index) /
+                                                       len(result.index)))
+    print("Mean time diff (Seconds): {}".format(result["TIME_DIFF"].mean()))
+    print("Max time diff (Seconds): {}".format(result["TIME_DIFF"].max()))
+    print("Min time diff (Seconds): {}".format(result["TIME_DIFF"].min()))
+
+    # Print histogram
+    result["TIME_DIFF"].plot(kind="hist", bins=range(0, 15, 1), facecolor="pink")
+    plt.xlabel("Time Diff (Minutes)")
+    plt.ylabel("Number of Observations")
+    plt.show()
+
+
 if __name__ == "__main__":
-    main()
+    stats()
