@@ -196,7 +196,7 @@ def stats():
     print("Max time diff (Minutes): {}".format(result["TIME_DIFF"].max()))
     print("Min time diff (Minutes): {}".format(result["TIME_DIFF"].min()))
 
-    # Print histogram
+    # Plot histogram
     result["TIME_DIFF"].plot(kind="hist", bins=range(0, 15, 1), facecolor="pink")
     plt.axis([0, 15, 0, 15000])
     plt.xlabel("Time Difference (Minutes)")
