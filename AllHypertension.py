@@ -52,11 +52,11 @@ def main():
         if first_sit_date_time_local is not None and pd.notnull(first_sit_date_time_local):
             # Find local and central times of next stand observation for row
             next_stand_date_time_local = row_observations.loc[
-                (row_observations["state"] == "stand") & (row_observations[
-                                                              "date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
+                (row_observations["state"] == "stand") &
+                (row_observations["date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
             next_stand_date_time_central = row_observations.loc[
-                (row_observations["state"] == "stand") & (row_observations[
-                                                              "timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
+                (row_observations["state"] == "stand") &
+                (row_observations["timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
 
             # If next stand exists
             if next_stand_date_time_local is not None and pd.notnull(next_stand_date_time_local):
@@ -68,11 +68,11 @@ def main():
 
                 # Find preceding sit
                 prev_sit_date_time_local = row_observations.loc[
-                    (row_observations["state"] == "sit") & (row_observations[
-                                                                "date_time_local"] < next_stand_date_time_local), "date_time_local"].max()
+                    (row_observations["state"] == "sit") &
+                    (row_observations["date_time_local"] < next_stand_date_time_local), "date_time_local"].max()
                 prev_sit_date_time_central = row_observations.loc[
-                    (row_observations["state"] == "sit") & (row_observations[
-                                                                "timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
+                    (row_observations["state"] == "sit") &
+                    (row_observations["timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
 
                 # Fill sit data
                 row["DATE_TIME_LOCAL_SIT"] = prev_sit_date_time_local
