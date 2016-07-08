@@ -185,6 +185,7 @@ def main():
 
 
 def stats():
+    # Retrieve results
     result = pd.read_csv("data/All_Hypertension_Results.csv")
 
     # Print stats
