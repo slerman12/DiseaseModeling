@@ -10,14 +10,14 @@ def main():
     # Set seed
     np.random.seed(0)
 
-    # Create the dataframe from file
+    # Create the data frame from file
     data = pd.read_csv("data/all_bp.csv")
 
     # Set columns
     columns = ["ID", "DAY", "DATE_TIME_CENTRAL_SIT", "DATE_TIME_CENTRAL_STAND", "DATE_TIME_LOCAL_SIT",
                "DATE_TIME_LOCAL_STAND", "TIME_DIFF", "MORNINGNIGHT", "COMPLIANCE"]
 
-    # Convert datetimes to pandas datetimes
+    # Convert date-times to pandas date-times
     data["date_time_local"] = pd.to_datetime(data["date_time_local"])
 
     # Find previous dawn before a time, and next dawn after another time
@@ -37,7 +37,7 @@ def main():
         # Return first and last dawn
         return first_dawn, last_dawn
 
-    # Dataframe for storing final result
+    # Data frame for storing final result
     result = pd.DataFrame(columns=columns)
 
     # Function to set features and values to a row and append row to result
