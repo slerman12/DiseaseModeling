@@ -50,19 +50,20 @@ def main():
 
         # If first sit exists
         if first_sit_date_time_local is not None and pd.notnull(first_sit_date_time_local):
+            # Index of first sit
+            sit_index = row_observations[(row_observations["state"] == "sit") &
+                                         (row_observations["date_time_local"] == first_sit_date_time_local)].index.min()
 
-            # stand observation recorded at the same time (to the nearest minute)
-            equal_time_stand = row_observations[(row_observations["state"] == "stand") & (row_observations["date_time_local"] == first_sit_date_time_local)]
-            equal_time_sit = row_observations[(row_observations["state"] == "sit") & (row_observations["date_time_local"] == first_sit_date_time_local)]
-
-            # To check if stand observation has same recorded time (to the nearest minute)
-            is_equal_time = equal_time_stand.any()
+            # stand observation recorded at the same time (to the nearest minute) but has higher index
+            equal_time_stand = row_observations[(row_observations["state"] == "stand") &
+                                                (row_observations["date_time_local"] == first_sit_date_time_local) &
+                                                (row_observations.index.max() > sit_index)]
 
             # Account for sit/stand pairings recorded with equal time by comparing indices
-            if is_equal_time and row_observations[equal_time_stand.index > equal_time_sit.index].any():
+            if not equal_time_stand.empty:
                 # Choose stand
-                next_stand_date_time_local = row_observations.loc[(equal_time_stand.index > equal_time_sit.index) & (row_observations["state"] == "stand"), "date_time_local"].min()
-                next_stand_date_time_central = row_observations.loc[(equal_time_stand.index > equal_time_sit.index) & (row_observations["state"] == "stand"), "timeOfDay_central"].min()
+                next_stand_date_time_local = equal_time_stand["date_time_local"].min()
+                next_stand_date_time_central = equal_time_stand["timeOfDay_central"].min()
                 prev_sit_date_time_local = first_sit_date_time_local
                 prev_sit_date_time_central = first_sit_date_time_central
 
@@ -103,7 +104,8 @@ def main():
                         (row_observations["date_time_local"] < next_stand_date_time_local), "date_time_local"].max()
                     prev_sit_date_time_central = row_observations.loc[
                         (row_observations["state"] == "sit") &
-                        (row_observations["timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
+                        (row_observations[
+                             "timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
 
                     # Fill sit data
                     row["DATE_TIME_LOCAL_SIT"] = prev_sit_date_time_local
@@ -212,12 +214,12 @@ def main():
     result["TIME_DIFF"] = pd.to_timedelta(result["TIME_DIFF"]).dt.seconds / 60
 
     # Output results to csv
-    result.to_csv("data/All_Hypertension_Results.csv", index=False)
+    result.to_csv("data/All_Hypertension_Results_Equals_Ordered.csv", index=False)
 
 
 def stats():
     # Retrieve results
-    result = pd.read_csv("data/All_Hypertension_Results.csv")
+    result = pd.read_csv("data/All_Hypertension_Results_Equals_Ordered.csv")
 
     # Print stats
     print("Total noncompliance: {}/{} [{:.2%}]".format(len(result[result["COMPLIANCE"] == 0].index),
@@ -237,4 +239,5 @@ def stats():
 
 
 if __name__ == "__main__":
+    main()
     stats()
