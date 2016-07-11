@@ -50,55 +50,86 @@ def main():
 
         # If first sit exists
         if first_sit_date_time_local is not None and pd.notnull(first_sit_date_time_local):
-            # Find local and central times of next stand observation for row
-            next_stand_date_time_local = row_observations.loc[
-                (row_observations["state"] == "stand") &
-                (row_observations["date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
-            next_stand_date_time_central = row_observations.loc[
-                (row_observations["state"] == "stand") &
-                (row_observations["timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
 
-            # If next stand exists
-            if next_stand_date_time_local is not None and pd.notnull(next_stand_date_time_local):
-                # Did both sit and stand
+            # stand observation recorded at the same time (to the nearest minute)
+            equal_time_stand = row_observations[(row_observations["state"] == "stand") & (row_observations["date_time_local"] == first_sit_date_time_local)]
+            equal_time_sit = row_observations[(row_observations["state"] == "sit") & (row_observations["date_time_local"] == first_sit_date_time_local)]
 
-                # Fill stand data
-                row["DATE_TIME_LOCAL_STAND"] = next_stand_date_time_local
-                row["DATE_TIME_CENTRAL_STAND"] = next_stand_date_time_central
+            # To check if stand observation has same recorded time (to the nearest minute)
+            is_equal_time = equal_time_stand.any()
 
-                # Find preceding sit
-                prev_sit_date_time_local = row_observations.loc[
-                    (row_observations["state"] == "sit") &
-                    (row_observations["date_time_local"] < next_stand_date_time_local), "date_time_local"].max()
-                prev_sit_date_time_central = row_observations.loc[
-                    (row_observations["state"] == "sit") &
-                    (row_observations["timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
+            # Account for sit/stand pairings recorded with equal time by comparing indices
+            if is_equal_time and row_observations[equal_time_stand.index > equal_time_sit.index].any():
+                # Choose stand
+                next_stand_date_time_local = row_observations.loc[(equal_time_stand.index > equal_time_sit.index) & (row_observations["state"] == "stand"), "date_time_local"].min()
+                next_stand_date_time_central = row_observations.loc[(equal_time_stand.index > equal_time_sit.index) & (row_observations["state"] == "stand"), "timeOfDay_central"].min()
+                prev_sit_date_time_local = first_sit_date_time_local
+                prev_sit_date_time_central = first_sit_date_time_central
 
                 # Fill sit data
                 row["DATE_TIME_LOCAL_SIT"] = prev_sit_date_time_local
                 row["DATE_TIME_CENTRAL_SIT"] = prev_sit_date_time_central
+
+                # Fill stand data
+                row["DATE_TIME_LOCAL_STAND"] = next_stand_date_time_local
+                row["DATE_TIME_CENTRAL_STAND"] = next_stand_date_time_central
 
                 # Set time difference
                 row["TIME_DIFF"] = next_stand_date_time_local - first_sit_date_time_local
 
                 # Complying
                 row["COMPLIANCE"] = 1
+
             else:
-                # Skipped stand
+                # Find local and central times of next stand observation for row
+                next_stand_date_time_local = row_observations.loc[
+                    (row_observations["state"] == "stand") &
+                    (row_observations["date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
+                next_stand_date_time_central = row_observations.loc[
+                    (row_observations["state"] == "stand") &
+                    (row_observations["timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
 
-                # Fill sit data
-                row["DATE_TIME_LOCAL_SIT"] = first_sit_date_time_local
-                row["DATE_TIME_CENTRAL_SIT"] = first_sit_date_time_central
+                # If next stand exists
+                if next_stand_date_time_local is not None and pd.notnull(next_stand_date_time_local):
+                    # Did both sit and stand
 
-                # Fill stand as NA
-                row["DATE_TIME_LOCAL_STAND"] = None
-                row["DATE_TIME_CENTRAL_STAND"] = None
+                    # Fill stand data
+                    row["DATE_TIME_LOCAL_STAND"] = next_stand_date_time_local
+                    row["DATE_TIME_CENTRAL_STAND"] = next_stand_date_time_central
 
-                # No time diff
-                row["TIME_DIFF"] = None
+                    # Find preceding sit
+                    prev_sit_date_time_local = row_observations.loc[
+                        (row_observations["state"] == "sit") &
+                        (row_observations["date_time_local"] < next_stand_date_time_local), "date_time_local"].max()
+                    prev_sit_date_time_central = row_observations.loc[
+                        (row_observations["state"] == "sit") &
+                        (row_observations["timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
 
-                # Noncomplying
-                row["COMPLIANCE"] = 0
+                    # Fill sit data
+                    row["DATE_TIME_LOCAL_SIT"] = prev_sit_date_time_local
+                    row["DATE_TIME_CENTRAL_SIT"] = prev_sit_date_time_central
+
+                    # Set time difference
+                    row["TIME_DIFF"] = next_stand_date_time_local - first_sit_date_time_local
+
+                    # Complying
+                    row["COMPLIANCE"] = 1
+                else:
+                    # Skipped stand
+
+                    # Fill sit data
+                    row["DATE_TIME_LOCAL_SIT"] = first_sit_date_time_local
+                    row["DATE_TIME_CENTRAL_SIT"] = first_sit_date_time_central
+
+                    # Fill stand as NA
+                    row["DATE_TIME_LOCAL_STAND"] = None
+                    row["DATE_TIME_CENTRAL_STAND"] = None
+
+                    # No time diff
+                    row["TIME_DIFF"] = None
+
+                    # Noncomplying
+                    row["COMPLIANCE"] = 0
         else:
             # Skipped sit
 
