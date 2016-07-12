@@ -42,7 +42,7 @@ def main():
 
     # Function to set features and values to a row and append row to result
     def set_add_row(row_observations, row):
-        # Find local and central times of first sit observation for row row
+        # Find local and central times of first sit observation for row
         first_sit_date_time_local = row_observations.loc[
             row_observations["state"] == "sit", "date_time_local"].min()
         first_sit_date_time_central = row_observations.loc[
@@ -54,7 +54,7 @@ def main():
             sit_index = row_observations[(row_observations["state"] == "sit") &
                                          (row_observations["date_time_local"] == first_sit_date_time_local)].index.min()
 
-            # stand observation recorded at the same time (to the nearest minute) but has higher index
+            # Stand observation recorded at the same time (to the nearest minute) but has higher index
             equal_time_stand = row_observations[(row_observations["state"] == "stand") &
                                                 (row_observations["date_time_local"] == first_sit_date_time_local) &
                                                 (row_observations.index.max() > sit_index)]
@@ -172,7 +172,7 @@ def main():
 
     # Iterate through each patient
     for patient in data["id"].unique():
-        # Initialize time as first dawn before earliest observation
+        # Initialize times as first dawn before earliest observation, and last dawn after last observation
         time, last_time = find_first_last_dawn(data.loc[data["id"] == patient, "date_time_local"].min(),
                                                data.loc[data["id"] == patient, "date_time_local"].max())
 
@@ -239,5 +239,4 @@ def stats():
 
 
 if __name__ == "__main__":
-    main()
     stats()
