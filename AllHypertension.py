@@ -222,13 +222,22 @@ def stats():
     result = pd.read_csv("data/All_Hypertension_Results_Equals_Ordered.csv")
 
     # Print stats
-    print("Total noncompliance: {}/{} [{:.2%}]".format(len(result[result["COMPLIANCE"] == 0].index),
-                                                       len(result.index),
-                                                       len(result[result["COMPLIANCE"] == 0].index) /
-                                                       len(result.index)))
+    print("Total compliance: {}/{} [{:.2%}]".format(len(result[result["COMPLIANCE"] == 1].index),
+                                                    len(result.index),
+                                                    len(result[result["COMPLIANCE"] == 1].index) /
+                                                    len(result.index)))
     print("Mean time diff (Minutes): {}".format(result["TIME_DIFF"].mean()))
     print("Max time diff (Minutes): {}".format(result["TIME_DIFF"].max()))
     print("Min time diff (Minutes): {}".format(result["TIME_DIFF"].min()))
+    days_compliant_count = 0
+    total_days_count = 0
+    for patient in result["ID"].unique():
+        for day in result.loc[result["ID"] == patient, "DAY"].unique():
+            total_days_count += 1
+            if result.loc[(result["ID"] == patient) & (result["DAY"] == day), "COMPLIANCE"].mean() == 1:
+                days_compliant_count += 1
+    print("Days compliant: {}/{} [{:.2%}]".format(days_compliant_count, total_days_count,
+                                                  days_compliant_count / total_days_count))
 
     # Plot histogram
     result["TIME_DIFF"].plot(kind="hist", bins=range(0, 15, 1), facecolor="pink")
