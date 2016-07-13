@@ -1,21 +1,20 @@
 from __future__ import division
 import math
 import pandas as pd
+import sys
 from pandas.tseries.offsets import Day
 import numpy as np
 import matplotlib.pyplot as plt
 
 
 def main():
-    # Set seed
-    np.random.seed(0)
-
     # Create the data frame from file
     data = pd.read_csv("data/all_bp.csv")
+    visits_data = pd.read_csv("data/STEADY3_VISITS.csv")
 
     # Set columns
     columns = ["ID", "DAY", "DATE_TIME_CENTRAL_SIT", "DATE_TIME_CENTRAL_STAND", "DATE_TIME_LOCAL_SIT",
-               "DATE_TIME_LOCAL_STAND", "TIME_DIFF", "MORNINGNIGHT", "COMPLIANCE"]
+               "DATE_TIME_LOCAL_STAND", "TIME_DIFF", "MORNINGNIGHT", "TIMEFRAME", "COMPLIANCE"]
 
     # Convert date-times to pandas date-times
     data["date_time_local"] = pd.to_datetime(data["date_time_local"])
@@ -170,8 +169,37 @@ def main():
             else:
                 result.loc[0, key] = row[key]
 
+    # Total patient count
+    patients_total = len(visits_data.loc[(visits_data["Status"] != "SCREEN FAIL") & (
+        visits_data["Subject"].isin(data["id"])), "Subject"].unique())
+
     # Iterate through each patient
-    for patient in data["id"].unique():
+    for index, patient in enumerate(visits_data.loc[(visits_data["Status"] != "SCREEN FAIL") & (
+            visits_data["Subject"].isin(data["id"])), "Subject"].unique()):
+        # Get patient's timeframe dates
+        if not visits_data.loc[visits_data["Subject"] == patient, "RS2"].any():
+            if not visits_data.loc[visits_data["Subject"] == patient, "RS1"].any():
+                sc = pd.Timestamp(visits_data.loc[visits_data["Subject"] == patient, "SC"].min())
+            else:
+                sc = pd.Timestamp(visits_data.loc[visits_data["Subject"] == patient, "RS1"].min())
+        else:
+            sc = pd.Timestamp(visits_data.loc[visits_data["Subject"] == patient, "RS2"].min())
+        if visits_data.loc[visits_data["Subject"] == patient, "BL"].any():
+            bl = pd.Timestamp(visits_data.loc[visits_data["Subject"] == patient, "BL"].min())
+            if visits_data.loc[visits_data["Subject"] == patient, "V01"].any():
+                v01 = pd.Timestamp(visits_data.loc[visits_data["Subject"] == patient, "V01"].min())
+                if visits_data.loc[visits_data["Subject"] == patient, "V02"].any():
+                    v02 = pd.Timestamp(visits_data.loc[visits_data["Subject"] == patient, "V02"].min())
+                else:
+                    v02 = None
+            else:
+                v01 = None
+                v02 = None
+        else:
+            bl = None
+            v01 = None
+            v02 = None
+
         # Initialize times as first dawn before earliest observation, and last dawn after last observation
         time, last_time = find_first_last_dawn(data.loc[data["id"] == patient, "date_time_local"].min(),
                                                data.loc[data["id"] == patient, "date_time_local"].max())
@@ -195,13 +223,45 @@ def main():
             morning_observations = observations[observations["ampm"] == "M"]
             night_observations = observations[observations["ampm"] == "N"]
 
-            # Set row IDs and morning/night
+            # Set row IDs, day, and morning/night
             morning_row["ID"] = patient
             morning_row["DAY"] = day_count
             morning_row["MORNINGNIGHT"] = "M"
             night_row["ID"] = patient
             night_row["DAY"] = day_count
             night_row["MORNINGNIGHT"] = "N"
+
+            # Set timeframe
+            if time < sc:
+                morning_row["TIMEFRAME"] = "Before SC"
+                night_row["TIMEFRAME"] = "Before SC"
+            else:
+                if bl is not None:
+                    if sc <= time < bl:
+                        morning_row["TIMEFRAME"] = "SC to BL"
+                        night_row["TIMEFRAME"] = "SC to BL"
+                    else:
+                        if v01 is not None:
+                            if bl <= time < v01:
+                                morning_row["TIMEFRAME"] = "BL to V01"
+                                night_row["TIMEFRAME"] = "BL to V01"
+                            else:
+                                if v02 is not None:
+                                    if v01 <= time < v02:
+                                        morning_row["TIMEFRAME"] = "V01 to V02"
+                                        night_row["TIMEFRAME"] = "V01 to V02"
+                                    else:
+                                        morning_row["TIMEFRAME"] = "After V02"
+                                        night_row["TIMEFRAME"] = "After V02"
+                                else:
+                                    morning_row["TIMEFRAME"] = "After V01"
+                                    night_row["TIMEFRAME"] = "After V01"
+                        else:
+                            morning_row["TIMEFRAME"] = "After BL"
+                            night_row["TIMEFRAME"] = "After BL"
+                else:
+                    morning_row["TIMEFRAME"] = "After SC"
+                    night_row["TIMEFRAME"] = "After SC"
 
             # Append morning and night rows
             set_add_row(morning_observations, morning_row)
@@ -210,16 +270,23 @@ def main():
             # Iterate by a day
             time = time + Day(1)
 
+        # Update progress
+        sys.stdout.write("\rProgress: {:.2%}".format(index / patients_total))
+        sys.stdout.flush()
+
     # Output result with time diffs as minutes
     result["TIME_DIFF"] = pd.to_timedelta(result["TIME_DIFF"]).dt.seconds / 60
 
     # Output results to csv
-    result.to_csv("data/All_Hypertension_Results_Equals_Ordered.csv", index=False)
+    result.to_csv("data/All_Hypertension_Results_With_Timeframe.csv", index=False)
 
 
 def stats():
     # Retrieve results
-    result = pd.read_csv("data/All_Hypertension_Results_Equals_Ordered.csv")
+    result = pd.read_csv("data/All_Hypertension_Results_With_Timeframe.csv")
+
+    print()
+    print(pd.value_counts(result["TIMEFRAME"]))
 
     # Print stats
     print("Total compliance: {}/{} [{:.2%}]".format(len(result[result["COMPLIANCE"] == 1].index),
@@ -248,4 +315,5 @@ def stats():
 
 
 if __name__ == "__main__":
+    main()
     stats()
