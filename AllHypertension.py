@@ -309,6 +309,13 @@ def time_frame_compliance():
     # Output to csv
     top_7_compliance_per_time_frame.to_csv("data/Top_7_Compliances_Per_Time_Frame.csv")
 
+    # Create time frame compliances dataframe
+    timeframe_compliances = top_7_compliance_per_time_frame.groupby(level=["ID", "TIMEFRAME"]).agg(
+        lambda x: x.sum() / 7).query('TIMEFRAME == "BL to V01" or TIMEFRAME == "SC to BL" or TIMEFRAME == "V01 to V02"')
+
+    # Output to csv
+    timeframe_compliances.to_csv("data/Time_Frame_Compliances_Per_Patient")
+
 
 def stats():
     # Retrieve results
