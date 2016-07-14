@@ -288,8 +288,9 @@ def time_frame_compliance():
     # Group by ID, TIMEFRAME, and DAY, and aggregate compliances
     top_7_compliance_per_time_frame = result[["ID", "DAY", "COMPLIANCE", "TIME_DIFF", "TIMEFRAME"]].groupby(
         ["ID", "TIMEFRAME", "DAY"]).agg({"COMPLIANCE": np.mean,
-                                         "TIME_DIFF": lambda x: 1 if (2 <= np.mean(x) <= 5) else (
-                                             0.5 if (2 <= x.min() <= 5 or 2 <= x.max() <= 5) else 0)})
+                                         "TIME_DIFF": lambda x: 1 if (2 <= np.mean(x.fillna(0)) <= 15) else (
+                                             0.5 if (2 <= x.fillna(0).min() <= 15 or 2 <= x.fillna(0).max() <= 15) else
+                                             0)})
 
     # Select the 7 best compliance daysper timeframe for each patient
     top_7_compliance_per_time_frame[["COMPLIANCE", "TIME_DIFF"]] = top_7_compliance_per_time_frame[
@@ -304,8 +305,6 @@ def time_frame_compliance():
     top_7_compliance_per_time_frame["SIT_STAND_COMPLIANCE"] = top_7_compliance_per_time_frame["COMPLIANCE"]
     top_7_compliance_per_time_frame["TIME_DIFF_COMPLIANCE"] = top_7_compliance_per_time_frame["TIME_DIFF"]
     top_7_compliance_per_time_frame = top_7_compliance_per_time_frame[["TIME_DIFF_COMPLIANCE", "SIT_STAND_COMPLIANCE"]]
-
-    print(top_7_compliance_per_time_frame.head(60))
 
     # Output to csv
     top_7_compliance_per_time_frame.to_csv("data/Top_7_Compliances_Per_Time_Frame.csv")
