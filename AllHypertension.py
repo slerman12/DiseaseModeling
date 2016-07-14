@@ -314,7 +314,7 @@ def time_frame_compliance():
         lambda x: x.sum() / 7).query('TIMEFRAME == "BL to V01" or TIMEFRAME == "SC to BL" or TIMEFRAME == "V01 to V02"')
 
     # Output to csv
-    timeframe_compliances.to_csv("data/Time_Frame_Compliances_Per_Patient")
+    timeframe_compliances.to_csv("data/Time_Frame_Compliances_Per_Patient.csv")
 
     # Grouped patient, time frame, and their mean compliance during that time frame
     compliance_means = timeframe_compliances.reset_index().groupby(["ID", "TIMEFRAME"]).mean().reset_index()
@@ -338,13 +338,13 @@ def time_frame_compliance():
             ["SC to BL", "BL to V01", "V01 to V02"]]
 
     # Output to csv
-    timeframe_compliance_means.to_csv("data/Time_Frame_Compliances_Per_Patient_As_Features")
+    timeframe_compliance_means.to_csv("data/Time_Frame_Compliances_Per_Patient_As_Features.csv")
 
 
 def stats():
     # Retrieve results
     result = pd.read_csv("data/All_Hypertension_Results_With_Timeframe.csv")
-    timeframe_compliances = pd.read_csv("data/Time_Frame_Compliances_Per_Patient")
+    timeframe_compliances = pd.read_csv("data/Time_Frame_Compliances_Per_Patient.csv")
 
     # Timeframe value counts
     print("\nTimeframe Value Counts:")
