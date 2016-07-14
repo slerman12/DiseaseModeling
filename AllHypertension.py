@@ -6,15 +6,15 @@ from pandas.tseries.offsets import Day
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Set columns
+columns = ["ID", "DAY", "DATE_TIME_CENTRAL_SIT", "DATE_TIME_CENTRAL_STAND", "DATE_TIME_LOCAL_SIT",
+           "DATE_TIME_LOCAL_STAND", "TIME_DIFF", "MORNINGNIGHT", "TIMEFRAME", "COMPLIANCE"]
+
 
 def main():
     # Create the data frame from file
     data = pd.read_csv("data/all_bp.csv")
     visits_data = pd.read_csv("data/STEADY3_VISITS.csv")
-
-    # Set columns
-    columns = ["ID", "DAY", "DATE_TIME_CENTRAL_SIT", "DATE_TIME_CENTRAL_STAND", "DATE_TIME_LOCAL_SIT",
-               "DATE_TIME_LOCAL_STAND", "TIME_DIFF", "MORNINGNIGHT", "TIMEFRAME", "COMPLIANCE"]
 
     # Convert date-times to pandas date-times
     data["date_time_local"] = pd.to_datetime(data["date_time_local"])
@@ -281,6 +281,36 @@ def main():
     result.to_csv("data/All_Hypertension_Results_With_Timeframe.csv", index=False)
 
 
+def time_frame_compliance():
+    # Retrieve results
+    result = pd.read_csv("data/All_Hypertension_Results_With_Timeframe.csv")
+
+    # Group by ID, TIMEFRAME, and DAY, and aggregate compliances
+    top_7_compliance_per_time_frame = result[["ID", "DAY", "COMPLIANCE", "TIME_DIFF", "TIMEFRAME"]].groupby(
+        ["ID", "TIMEFRAME", "DAY"]).agg({"COMPLIANCE": np.mean,
+                                         "TIME_DIFF": lambda x: 1 if (2 <= np.mean(x) <= 5) else (
+                                             0.5 if (2 <= x.min() <= 5 or 2 <= x.max() <= 5) else 0)})
+
+    # Select the 7 best compliance daysper timeframe for each patient
+    top_7_compliance_per_time_frame[["COMPLIANCE", "TIME_DIFF"]] = top_7_compliance_per_time_frame[
+        ["COMPLIANCE", "TIME_DIFF"]].groupby(level=["ID", "TIMEFRAME"], group_keys=False).apply(
+        lambda x: x.sort_values(by=["COMPLIANCE", "TIME_DIFF"], ascending=False).head(7))
+
+    # Remove other days
+    top_7_compliance_per_time_frame = top_7_compliance_per_time_frame[
+        pd.notnull(top_7_compliance_per_time_frame["COMPLIANCE"])]
+
+    # Rename compliances
+    top_7_compliance_per_time_frame["SIT_STAND_COMPLIANCE"] = top_7_compliance_per_time_frame["COMPLIANCE"]
+    top_7_compliance_per_time_frame["TIME_DIFF_COMPLIANCE"] = top_7_compliance_per_time_frame["TIME_DIFF"]
+    top_7_compliance_per_time_frame = top_7_compliance_per_time_frame[["TIME_DIFF_COMPLIANCE", "SIT_STAND_COMPLIANCE"]]
+
+    print(top_7_compliance_per_time_frame.head(60))
+
+    # Output to csv
+    top_7_compliance_per_time_frame.to_csv("data/Top_7_Compliances_Per_Time_Frame.csv")
+
+
 def stats():
     # Retrieve results
     result = pd.read_csv("data/All_Hypertension_Results_With_Timeframe.csv")
@@ -315,5 +345,4 @@ def stats():
 
 
 if __name__ == "__main__":
-    main()
-    stats()
+    time_frame_compliance()
