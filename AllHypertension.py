@@ -344,7 +344,7 @@ def time_frame_compliance():
 def stats():
     # Retrieve results
     result = pd.read_csv("data/All_Hypertension_Results_With_Timeframe.csv")
-    timeframe_compliances = pd.read_csv("data/Time_Frame_Compliances_Per_Patient.csv")
+    timeframe_compliances = pd.read_csv("data/Time_Frame_Compliances_Per_Patient_As_Features.csv")
 
     # Timeframe value counts
     print("\nTimeframe Value Counts:")
@@ -354,24 +354,24 @@ def stats():
     print("\nMean time diff (Minutes): {}".format(result["TIME_DIFF"].mean()))
     print("Max time diff (Minutes): {}".format(result["TIME_DIFF"].max()))
     print("Min time diff (Minutes): {}\n".format(result["TIME_DIFF"].min()))
-    print("Mean time diff compliance from SC to BL: {:.2%} [{} Patients]\n"
-          "Mean time diff compliance from BL to V01: {:.2%} [{} Patients]\n"
-          "Mean time diff compliance from V01 to V02: {:.2%} [{} Patients]\n\n"
-          "Mean sit/stand compliance from SC to BL: {:.2%} [{} Patients]\n"
-          "Mean sit/stand compliance from BL to V01: {:.2%} [{} Patients]\n"
-          "Mean sit/stand compliance from V01 to V02: {:.2%} [{} Patients]\n".format(
-        timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "SC to BL", "TIME_DIFF_COMPLIANCE"].mean(),
-        len(timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "SC to BL", "TIME_DIFF_COMPLIANCE"]),
-        timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "BL to V01", "TIME_DIFF_COMPLIANCE"].mean(),
-        len(timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "BL to V01", "TIME_DIFF_COMPLIANCE"]),
-        timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "V01 to V02", "TIME_DIFF_COMPLIANCE"].mean(),
-        len(timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "V01 to V02", "TIME_DIFF_COMPLIANCE"]),
-        timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "SC to BL", "SIT_STAND_COMPLIANCE"].mean(),
-        len(timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "SC to BL", "SIT_STAND_COMPLIANCE"]),
-        timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "BL to V01", "SIT_STAND_COMPLIANCE"].mean(),
-        len(timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "BL to V01", "SIT_STAND_COMPLIANCE"]),
-        timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "V01 to V02", "SIT_STAND_COMPLIANCE"].mean(),
-        len(timeframe_compliances.loc[timeframe_compliances["TIMEFRAME"] == "V01 to V02", "SIT_STAND_COMPLIANCE"])))
+    print("Mean time diff compliance from SC to BL: {:.2%} [{} Total Patients]\n"
+          "Mean time diff compliance from BL to V01: {:.2%} [{} Total Patients]\n"
+          "Mean time diff compliance from V01 to V02: {:.2%} [{} Total Patients]\n\n"
+          "Mean sit/stand compliance from SC to BL: {:.2%} [{} Total Patients]\n"
+          "Mean sit/stand compliance from BL to V01: {:.2%} [{} Total Patients]\n"
+          "Mean sit/stand compliance from V01 to V02: {:.2%} [{} Total Patients]\n".format(
+        timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"].mean(),
+        timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"].count(),
+        timeframe_compliances["BL_TO_V01_TIME_DIFF_COMPLIANCE"].mean(),
+        timeframe_compliances["BL_TO_V01_TIME_DIFF_COMPLIANCE"].count(),
+        timeframe_compliances["V01_TO_V02_TIME_DIFF_COMPLIANCE"].mean(),
+        timeframe_compliances["V01_TO_V02_TIME_DIFF_COMPLIANCE"].count(),
+        timeframe_compliances["SC_TO_BL_SIT_STAND_COMPLIANCE"].mean(),
+        timeframe_compliances["SC_TO_BL_SIT_STAND_COMPLIANCE"].count(),
+        timeframe_compliances["BL_TO_V01_SIT_STAND_COMPLIANCE"].mean(),
+        timeframe_compliances["BL_TO_V01_SIT_STAND_COMPLIANCE"].count(),
+        timeframe_compliances["V01_TO_V02_SIT_STAND_COMPLIANCE"].mean(),
+        timeframe_compliances["V01_TO_V02_SIT_STAND_COMPLIANCE"].count()))
 
     # Plot histograma
     result["TIME_DIFF"].plot(kind="hist", bins=range(0, 15, 1), facecolor="pink")
@@ -380,10 +380,13 @@ def stats():
     plt.ylabel("Number of Observations")
     plt.show()
 
-    timeframe_compliances = \
-        timeframe_compliances.groupby(["ID", "TIMEFRAME"]).mean().query('TIMEFRAME == "V01 to V02"')[
-            ["SIT_STAND_COMPLIANCE", "TIME_DIFF_COMPLIANCE"]] * 100
+    # Plot histograma
+    (timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"] * 100).plot(kind="hist",
+                                                                        facecolor="pink")
+    plt.xlabel("SC to BL Time Diff Compliance (%)")
+    plt.ylabel("Number of Patients")
+    plt.show()
 
 
 if __name__ == "__main__":
-    time_frame_compliance()
+    stats()
