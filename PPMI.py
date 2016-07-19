@@ -1,44 +1,73 @@
-from sklearn.ensemble import RandomForestClassifier
+import math
+import pandas as pd
+import MachineLearning as mL
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.svm import SVC
-import pandas as pd
-import numpy as np
-import math
-import MachineLearning as mL
+from sklearn.ensemble import GradientBoostingClassifier
 
 
 def main():
-    # Set seed
-    np.random.seed(0)
+    # Create the data frames from files
+    all_patients = pd.read_csv("data/all_pats.csv")
+    all_visits = pd.read_csv("data/all_visits.csv")
+    all_updrs = pd.read_csv("data/all_updrs.csv")
 
-    # Create the training/test set(s) from file(s)
-    train = pd.read_csv("data/all_visits_practice_2.csv")
+    # Enrolled PD / Control patients
+    pd_control_patients = all_patients.loc[
+        ((all_patients["DIAGNOSIS"] == "PD") | (all_patients["DIAGNOSIS"] == "Control")) & (
+            all_patients["ENROLL_STATUS"] == "Enrolled"), "PATNO"].unique()
 
-    # Preliminary data diagnostics
-    mL.describe_data(data=train, describe=True, info=True, value_counts=["ONOFF", "NP3BRADY"],
-                     description="PRELIMINARY DATA DIAGNOSTICS:")
+    # Data for these patients
+    pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)]
+
+    # Eliminate features with more than 20% NAs
+    for feature in pd_control_data.keys():
+        if len(pd_control_data.loc[pd_control_data[feature].isnull(), feature]) / len(pd_control_data[feature]) > 0.2:
+            pd_control_data = pd_control_data.drop(feature, 1)
+
+    # Create csv of pd/control patient data
+    # pd_control_data.to_csv("data/pd_control_data.csv", index=False)
+
+    # Merge with updrs scores
+    pd_control_data = pd_control_data.merge(all_updrs, on=["PATNO", "EVENT_ID"], how="left")
+
+    # Create csv of pd/control patient data
+    # pd_control_data.to_csv("data/pd_control_data.csv", index=False)
+
+    pd_control_updrs_data = pd_control_data[pd_control_data["TOTAL"].notnull()]
+
+    # Create csv of pd/control patient data
+    # pd_control_updrs_data.to_csv("data/pd_control_updrs_data.csv", index=False)
+
+    # Drop rows with NAs
+    pd_control_updrs_data = pd_control_updrs_data.dropna()
+
+    # Only include baseline and subsequent visits
+    pd_control_updrs_data = pd_control_updrs_data[
+        (pd_control_updrs_data["EVENT_ID"] != "SC") & (pd_control_updrs_data["EVENT_ID"] != "ST") & (
+            pd_control_updrs_data["EVENT_ID"] != "U01") & (pd_control_updrs_data["EVENT_ID"] != "PW")]
 
     # Encode EVENT_ID to numeric
-    mL.clean_data(data=train, encode_man={"EVENT_ID": {"SC": 0, "V04": 4, "V06": 6, "V10": 10}})
+    mL.clean_data(data=pd_control_updrs_data, encode_man={
+        "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8, "V09": 9,
+                     "V10": 10, "V11": 11, "V12": 12}})
 
-    # Choose On or Off
-    train = train[train["ONOFF"] == 0]
-
-    # Remove the class with only a single sample
-    train = train[train.NP3BRADY != 4]
+    # Drop duplicates
+    pd_control_updrs_data = pd_control_updrs_data.drop_duplicates(subset=["PATNO", "EVENT_ID"])
 
     # Predictors for the model
-    predictors = ["TIME_PASSED", "VISIT_NOW", "CAUDATE_R", "CAUDATE_L", "PUTAMEN_R", "PUTAMEN_L",
-                  "SCORE_NOW"]
+    predictors = ["TIME_PASSED", "VISIT_NOW", "SCORE_NOW", "TEMPC", "BPARM", "SYSSUP", "DIASUP", "HRSUP", "SYSSTND",
+                  "DIASTND", "HRSTND"]
 
     # Target for the model
     target = "SCORE_NEXT"
 
     # Generate new features
-    train = generate_features(data=train, predictors=predictors, target=target, id_name="PATNO", score_name="NP3BRADY",
+    train = generate_features(data=pd_control_updrs_data, predictors=predictors, target=target, id_name="PATNO",
+                              score_name="TOTAL",
                               visit_name="EVENT_ID")
 
     # Value counts for EVENT_ID after feature generation
@@ -49,7 +78,7 @@ def main():
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
 
     # Algs for model
-    algs = [RandomForestClassifier(n_estimators=1000, min_samples_split=50, min_samples_leaf=2, oob_score=True),
+    algs = [RandomForestRegressor(n_estimators=300, min_samples_split=8, min_samples_leaf=2, oob_score=True),
             LogisticRegression(),
             SVC(probability=True),
             GaussianNB(),
