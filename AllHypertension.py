@@ -287,15 +287,16 @@ def time_frame_compliance():
 
     # Group by ID, TIMEFRAME, and DAY, and aggregate compliances
     top_7_compliance_per_time_frame = result[["ID", "DAY", "COMPLIANCE", "TIME_DIFF", "TIMEFRAME"]].groupby(
-        ["ID", "TIMEFRAME", "DAY"]).agg({"COMPLIANCE": np.mean,
-                                         "TIME_DIFF": lambda x: 1 if (2 <= np.mean(x.fillna(0)) <= 15) else (
-                                             0.5 if (2 <= x.fillna(0).min() <= 15 or 2 <= x.fillna(0).max() <= 15) else
-                                             0)})
+            ["ID", "TIMEFRAME", "DAY"]).agg({"COMPLIANCE": np.mean,
+                                             "TIME_DIFF": lambda x: 1 if (2 <= np.mean(x.fillna(0)) <= 15) else (
+                                                 0.5 if (
+                                                     2 <= x.fillna(0).min() <= 15 or 2 <= x.fillna(0).max() <= 15) else
+                                                 0)})
 
-    # Select the 7 best compliance daysper timeframe for each patient
+    # Select the 7 best compliance days per time frame for each patient
     top_7_compliance_per_time_frame[["COMPLIANCE", "TIME_DIFF"]] = top_7_compliance_per_time_frame[
         ["COMPLIANCE", "TIME_DIFF"]].groupby(level=["ID", "TIMEFRAME"], group_keys=False).apply(
-        lambda x: x.sort_values(by=["COMPLIANCE", "TIME_DIFF"], ascending=False).head(7))
+            lambda x: x.sort_values(by=["COMPLIANCE", "TIME_DIFF"], ascending=False).head(7))
 
     # Remove other days
     top_7_compliance_per_time_frame = top_7_compliance_per_time_frame[
@@ -311,7 +312,8 @@ def time_frame_compliance():
 
     # Create time frame compliances dataframe
     timeframe_compliances = top_7_compliance_per_time_frame.groupby(level=["ID", "TIMEFRAME"]).agg(
-        lambda x: x.sum() / 7).query('TIMEFRAME == "BL to V01" or TIMEFRAME == "SC to BL" or TIMEFRAME == "V01 to V02"')
+            lambda x: x.sum() / 7).query(
+            'TIMEFRAME == "BL to V01" or TIMEFRAME == "SC to BL" or TIMEFRAME == "V01 to V02"')
 
     # Output to csv
     timeframe_compliances.to_csv("data/Time_Frame_Compliances_Per_Patient.csv")
@@ -321,9 +323,9 @@ def time_frame_compliance():
 
     # Initiated dataframe
     timeframe_compliance_means = pd.DataFrame(
-        columns=["SC_TO_BL_TIME_DIFF_COMPLIANCE", "SC_TO_BL_SIT_STAND_COMPLIANCE", "BL_TO_V01_TIME_DIFF_COMPLIANCE",
-                 "BL_TO_V01_SIT_STAND_COMPLIANCE", "V01_TO_V02_TIME_DIFF_COMPLIANCE",
-                 "V01_TO_V02_SIT_STAND_COMPLIANCE"])
+            columns=["SC_TO_BL_TIME_DIFF_COMPLIANCE", "SC_TO_BL_SIT_STAND_COMPLIANCE", "BL_TO_V01_TIME_DIFF_COMPLIANCE",
+                     "BL_TO_V01_SIT_STAND_COMPLIANCE", "V01_TO_V02_TIME_DIFF_COMPLIANCE",
+                     "V01_TO_V02_SIT_STAND_COMPLIANCE"])
 
     # Set sit/stands
     timeframe_compliance_means[
@@ -344,6 +346,7 @@ def time_frame_compliance():
 def stats():
     # Retrieve results
     result = pd.read_csv("data/All_Hypertension_Results_With_Timeframe.csv")
+    top_7 = pd.read_csv("data/Top_7_Compliances_Per_Time_Frame.csv")
     timeframe_compliances = pd.read_csv("data/Time_Frame_Compliances_Per_Patient_As_Features.csv")
 
     # Timeframe value counts
@@ -360,31 +363,35 @@ def stats():
           "Mean sit/stand compliance from SC to BL: {:.2%} [{} Total Patients]\n"
           "Mean sit/stand compliance from BL to V01: {:.2%} [{} Total Patients]\n"
           "Mean sit/stand compliance from V01 to V02: {:.2%} [{} Total Patients]\n".format(
-        timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"].mean(),
-        timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"].count(),
-        timeframe_compliances["BL_TO_V01_TIME_DIFF_COMPLIANCE"].mean(),
-        timeframe_compliances["BL_TO_V01_TIME_DIFF_COMPLIANCE"].count(),
-        timeframe_compliances["V01_TO_V02_TIME_DIFF_COMPLIANCE"].mean(),
-        timeframe_compliances["V01_TO_V02_TIME_DIFF_COMPLIANCE"].count(),
-        timeframe_compliances["SC_TO_BL_SIT_STAND_COMPLIANCE"].mean(),
-        timeframe_compliances["SC_TO_BL_SIT_STAND_COMPLIANCE"].count(),
-        timeframe_compliances["BL_TO_V01_SIT_STAND_COMPLIANCE"].mean(),
-        timeframe_compliances["BL_TO_V01_SIT_STAND_COMPLIANCE"].count(),
-        timeframe_compliances["V01_TO_V02_SIT_STAND_COMPLIANCE"].mean(),
-        timeframe_compliances["V01_TO_V02_SIT_STAND_COMPLIANCE"].count()))
+            timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"].mean(),
+            timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"].count(),
+            timeframe_compliances["BL_TO_V01_TIME_DIFF_COMPLIANCE"].mean(),
+            timeframe_compliances["BL_TO_V01_TIME_DIFF_COMPLIANCE"].count(),
+            timeframe_compliances["V01_TO_V02_TIME_DIFF_COMPLIANCE"].mean(),
+            timeframe_compliances["V01_TO_V02_TIME_DIFF_COMPLIANCE"].count(),
+            timeframe_compliances["SC_TO_BL_SIT_STAND_COMPLIANCE"].mean(),
+            timeframe_compliances["SC_TO_BL_SIT_STAND_COMPLIANCE"].count(),
+            timeframe_compliances["BL_TO_V01_SIT_STAND_COMPLIANCE"].mean(),
+            timeframe_compliances["BL_TO_V01_SIT_STAND_COMPLIANCE"].count(),
+            timeframe_compliances["V01_TO_V02_SIT_STAND_COMPLIANCE"].mean(),
+            timeframe_compliances["V01_TO_V02_SIT_STAND_COMPLIANCE"].count()))
+    patient_means = top_7[(top_7["TIMEFRAME"] == "SC to BL") | (top_7["TIMEFRAME"] == "BL to V01") | (
+    top_7["TIMEFRAME"] == "V01 to V02")].groupby("ID").agg(lambda x: np.sum(x) / 21)
+    print("Mean patient time diff compliance: {}\n"
+          "Mean patient sit/stand compliance: {}\n".format(patient_means["TIME_DIFF_COMPLIANCE"].mean(),
+                                                           patient_means["SIT_STAND_COMPLIANCE"].mean()))
 
-    # Plot histograma
+    # Plot histogram
     result["TIME_DIFF"].plot(kind="hist", bins=range(0, 15, 1), facecolor="pink")
     plt.axis([0, 15, 0, 15000])
     plt.xlabel("Time Difference (Minutes)")
     plt.ylabel("Number of Observations")
     plt.show()
 
-    # Plot histograma
-    (timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"] * 100).plot(kind="hist",
-                                                                        facecolor="pink")
+    # Plot histograms
     plt.xlabel("SC to BL Time Diff Compliance (%)")
     plt.ylabel("Number of Patients")
+    (timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"] * 100).plot(kind="hist", facecolor="pink")
     plt.show()
 
 
