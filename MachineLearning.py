@@ -104,27 +104,32 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
     # Cross validation
     def print_cross_val(alg, name):
-        scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
+
         if scoring == "root_mean_squared_error":
-            print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}]".format(abs(scores.mean())**0.5, scores.std(), name))
+            scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds,
+                                                      scoring="mean_squared_error")
+            print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()) ** 0.5,
+                                                                             scores.std() ** 0.5, name, scoring))
         else:
-            print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}]".format(abs(scores.mean()), scores.std(), name))
+            scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
+            print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()), scores.std(), name,
+                                                                             scoring))
 
     # Split accuracy
     def print_split_accuracy(alg, name, split_name, X_train, X_test, y_train, y_test):
         y_pred = alg.fit(X_train, y_train).predict(X_test)
         if scoring == "accuracy":
-            print("{}: {:0.2f} [{}]".format(split_name, accuracy_score(y_test, y_pred), name))
+            print("{}: {:0.2f} [{}] ({})".format(split_name, accuracy_score(y_test, y_pred), name, scoring))
         elif scoring == "mean_absolute_error":
-            print("{}: {:0.2f} [{}]".format(split_name, mean_absolute_error(y_test, y_pred), name))
+            print("{}: {:0.2f} [{}] ({})".format(split_name, mean_absolute_error(y_test, y_pred), name, scoring))
         elif scoring == "root_mean_squared_error":
-            print("{}: {:0.2f} [{}]".format(split_name, mean_squared_error(y_test, y_pred)**0.5, name))
+            print("{}: {:0.2f} [{}] ({})".format(split_name, mean_squared_error(y_test, y_pred) ** 0.5, name, scoring))
         elif scoring == "mean_squared_error":
-            print("{}: {:0.2f} [{}]".format(split_name, mean_squared_error(y_test, y_pred), name))
+            print("{}: {:0.2f} [{}] ({})".format(split_name, mean_squared_error(y_test, y_pred), name, scoring))
         elif scoring == "median_absolute_error":
-            print("{}: {:0.2f} [{}]".format(split_name, median_absolute_error(y_test, y_pred), name))
+            print("{}: {:0.2f} [{}] ({})".format(split_name, median_absolute_error(y_test, y_pred), name, scoring))
         elif scoring == "r2":
-            print("{}: {:0.2f} [{}]".format(split_name, r2_score(y_test, y_pred), name))
+            print("{}: {:0.2f} [{}] ({})".format(split_name, r2_score(y_test, y_pred), name, scoring))
 
     # Split classification report
     def print_split_classification_report(alg, name, X_train, X_test, y_train, y_test):
@@ -190,9 +195,9 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         # Print best parameters and score
         print(grid_search.best_params_)
         if scoring == "root_mean_squared_error":
-            print("Cross Validation: {}".format(grid_search.best_score_**0.5))
+            print("Cross Validation: {} ({})".format(grid_search.best_score_ ** 0.5, scoring))
         else:
-            print("Cross Validation: {}".format(grid_search.best_score_))
+            print("Cross Validation: {} ({})".format(grid_search.best_score_, scoring))
 
     # Print description of metrics
     if description is not None:
