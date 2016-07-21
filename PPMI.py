@@ -24,29 +24,14 @@ def main():
     # Data for these patients
     pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)]
 
-    # Create csv of pd/control patient data
-    pd_control_data.to_csv("data/pd_control_data_before_merge.csv", index=False)
-
     # Merge with updrs scores
     pd_control_data = pd_control_data.merge(all_updrs, on=["PATNO", "EVENT_ID"], how="left")
 
-    # Create csv of pd/control patient data
-    # pd_control_data.to_csv("data/pd_control_data_with_nulls.csv", index=False)
-
-    # Get rid of nulls
+    # Get rid of nulls for updrs
     pd_control_updrs_data = pd_control_data[pd_control_data["TOTAL"].notnull()]
 
     # Merge with patient info
     pd_control_updrs_data = pd_control_updrs_data.merge(all_patients, on="PATNO", how="left")
-
-    # Eliminate features with more than 20% NAs
-    for feature in pd_control_updrs_data.keys():
-        if len(pd_control_updrs_data.loc[pd_control_updrs_data[feature].isnull(), feature]) / len(
-                pd_control_updrs_data[feature]) > 0.2:
-            pd_control_updrs_data = pd_control_updrs_data.drop(feature, 1)
-
-    # Drop rows with NAs
-    pd_control_updrs_data = pd_control_updrs_data.dropna()
 
     # Only include baseline and subsequent visits
     pd_control_updrs_data = pd_control_updrs_data[
@@ -57,6 +42,15 @@ def main():
     mL.clean_data(data=pd_control_updrs_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8, "V09": 9,
                      "V10": 10, "V11": 11, "V12": 12}})
+
+    # Eliminate features with more than 20% NAs
+    for feature in pd_control_updrs_data.keys():
+        if len(pd_control_updrs_data.loc[pd_control_updrs_data[feature].isnull(), feature]) / len(
+                pd_control_updrs_data[feature]) > 0.2:
+            pd_control_updrs_data = pd_control_updrs_data.drop(feature, 1)
+
+    # Drop rows with NAs
+    pd_control_updrs_data = pd_control_updrs_data.dropna()
 
     # Drop duplicates
     pd_control_updrs_data = pd_control_updrs_data.drop_duplicates(subset=["PATNO", "EVENT_ID"])
@@ -72,15 +66,15 @@ def main():
     target = "SCORE_NEXT"
 
     # Generate new features
-    # train = generate_features(data=pd_control_updrs_data, predictors=predictors, target=target, id_name="PATNO",
-    #                           score_name="TOTAL",
-    #                           visit_name="EVENT_ID")
+    train = generate_features(data=pd_control_updrs_data, predictors=predictors, target=target, id_name="PATNO",
+                              score_name="TOTAL",
+                              visit_name="EVENT_ID")
 
     # Save generated features data
     # train.to_csv("data/PPMI_train.csv", index=False)
 
     # Retrieve generated features data
-    train = pd.read_csv("data/PPMI_train.csv")
+    # train = pd.read_csv("data/PPMI_train.csv")
 
     # Value counts for EVENT_ID after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
@@ -126,8 +120,8 @@ def main():
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                feature_importances=[True], base_score=[True], oob_score=[True],
-               cross_val=[True], scoring="mean_absolute_error", split_accuracy=[True],
-               grid_search_params=None)
+               cross_val=[True], scoring="root_mean_squared_error", split_accuracy=[True],
+               grid_search_params=grid_search_params)
 
 
 def generate_features(data, predictors, target, id_name, score_name, visit_name):
