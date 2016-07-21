@@ -1,5 +1,6 @@
 import math
 import pandas as pd
+import sys
 import MachineLearning as mL
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
@@ -23,24 +24,26 @@ def main():
     # Data for these patients
     pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)]
 
-    # Eliminate features with more than 20% NAs
-    for feature in pd_control_data.keys():
-        if len(pd_control_data.loc[pd_control_data[feature].isnull(), feature]) / len(pd_control_data[feature]) > 0.2:
-            pd_control_data = pd_control_data.drop(feature, 1)
-
     # Create csv of pd/control patient data
-    # pd_control_data.to_csv("data/pd_control_data.csv", index=False)
+    pd_control_data.to_csv("data/pd_control_data_before_merge.csv", index=False)
 
     # Merge with updrs scores
     pd_control_data = pd_control_data.merge(all_updrs, on=["PATNO", "EVENT_ID"], how="left")
 
     # Create csv of pd/control patient data
-    # pd_control_data.to_csv("data/pd_control_data.csv", index=False)
+    # pd_control_data.to_csv("data/pd_control_data_with_nulls.csv", index=False)
 
+    # Get rid of nulls
     pd_control_updrs_data = pd_control_data[pd_control_data["TOTAL"].notnull()]
 
-    # Create csv of pd/control patient data
-    # pd_control_updrs_data.to_csv("data/pd_control_updrs_data.csv", index=False)
+    # Merge with patient info
+    pd_control_updrs_data = pd_control_updrs_data.merge(all_patients, on="PATNO", how="left")
+
+    # Eliminate features with more than 20% NAs
+    for feature in pd_control_updrs_data.keys():
+        if len(pd_control_updrs_data.loc[pd_control_updrs_data[feature].isnull(), feature]) / len(
+                pd_control_updrs_data[feature]) > 0.2:
+            pd_control_updrs_data = pd_control_updrs_data.drop(feature, 1)
 
     # Drop rows with NAs
     pd_control_updrs_data = pd_control_updrs_data.dropna()
@@ -51,7 +54,7 @@ def main():
             pd_control_updrs_data["EVENT_ID"] != "U01") & (pd_control_updrs_data["EVENT_ID"] != "PW")]
 
     # Encode EVENT_ID to numeric
-    mL.clean_data(data=pd_control_updrs_data, encode_man={
+    mL.clean_data(data=pd_control_updrs_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8, "V09": 9,
                      "V10": 10, "V11": 11, "V12": 12}})
 
@@ -59,8 +62,11 @@ def main():
     pd_control_updrs_data = pd_control_updrs_data.drop_duplicates(subset=["PATNO", "EVENT_ID"])
 
     # Predictors for the model
-    predictors = ["TIME_PASSED", "VISIT_NOW", "SCORE_NOW", "TEMPC", "BPARM", "SYSSUP", "DIASUP", "HRSUP", "SYSSTND",
-                  "DIASTND", "HRSTND"]
+    predictors = ["VISIT_NEXT", "SCORE_NOW", "TEMPC", "BPARM", "SYSSUP", "DIASUP", "HRSUP", "SYSSTND", "DIASTND",
+                  "HRSTND", "AE", "GENDER.x", "DIAGNOSIS", "CNO", "OTHCOND", "BIOMOM", "BIOMOMPD", "BIODAD", "BIODADPD",
+                  "FULSIB", "FULSIBPD", "HAFSIB", "HAFSIBPD", "MAGPAR", "MAGPARPD", "PAGPAR", "PAGPARPD", "MATAU",
+                  "MATAUPD", "PATAU", "PATAUPD", "KIDSNUM", "KIDSPD", "INITMD", "BIRTHDT.y", "HISPLAT", "RAINDALS",
+                  "RAASIAN", "RABLACK", "RAHAWOPI", "RAWHITE", "RANOS", "EDUCYRS", "HANDED"]
 
     # Target for the model
     target = "SCORE_NEXT"
@@ -70,15 +76,20 @@ def main():
                               score_name="TOTAL",
                               visit_name="EVENT_ID")
 
+    # Save generated features data
+    train.to_csv("data/PPMI_train.csv", index=False)
+
+    # Retrieve generated features data
+    train = pd.read_csv("data/PPMI_train.csv")
+
     # Value counts for EVENT_ID after feature generation
-    mL.describe_data(data=train, info=True, describe=True, value_counts=["VISIT_NOW", "SCORE_NEXT"],
-                     description="AFTER FEATURE GENERATION:")
+    mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
 
     # Algs for model
-    algs = [RandomForestRegressor(n_estimators=300, min_samples_split=8, min_samples_leaf=2, oob_score=True),
+    algs = [RandomForestRegressor(n_estimators=500, min_samples_split=75, min_samples_leaf=50, oob_score=True),
             LogisticRegression(),
             SVC(probability=True),
             GaussianNB(),
@@ -98,9 +109,9 @@ def main():
                  "Gradient Boosting"]
 
     # Parameters for grid search
-    grid_search_params = [{"n_estimators": [50, 500, 1000],
-                           "min_samples_split": [25, 50, 75],
-                           "min_samples_leaf": [2, 15, 25, 50]}]
+    grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
+                           "min_samples_split": [4, 8, 25, 50, 75, 100],
+                           "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
 
     # Ensemble
     ens = mL.ensemble(algs=algs, alg_names=alg_names,
@@ -109,16 +120,14 @@ def main():
                       voting="soft")
 
     # Add ensemble to algs and alg_names
-    algs.append(ens["alg"])
-    alg_names.append(ens["name"])
+    # algs.append(ens["alg"])
+    # alg_names.append(ens["name"])
 
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                feature_importances=[True], base_score=[True], oob_score=[True],
-               cross_val=[True, True, True, True, True, True, True, True, True],
-               split_accuracy=[True, True, True, True, True, True, True, True, True],
-               split_classification_report=[False, False, False, False, False, False, False, False, True],
-               split_confusion_matrix=[False, False, False, False, False, False, False, False, True])
+               cross_val=[True], scoring="mean_absolute_error", split_accuracy=[True],
+               grid_search_params=grid_search_params)
 
 
 def generate_features(data, predictors, target, id_name, score_name, visit_name):
@@ -135,10 +144,19 @@ def generate_features(data, predictors, target, id_name, score_name, visit_name)
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
 
+    # Initialize progress measures
+    progress_complete = 0
+    progress_total = len(data)
+
     # Build new data (generate SCORE_NEXT, VISIT_NEXT, and TIME_PASSED)
     for index, row in data.iterrows():
+        # Update progress
+        progress_complete += 1
+        sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
+        sys.stdout.flush()
+
         # If now visit isn't the max
-        if row["VISIT_NOW"] < max_visit:
+        if row["VISIT_NOW"] == 0:
             # For the range of all visits after this one
             for i in range(1, max_visit + 1):
                 # If any future visit belongs to the same patient
@@ -159,6 +177,9 @@ def generate_features(data, predictors, target, id_name, score_name, visit_name)
                         new_data.loc[new_data.index.max() + 1] = row[features]
                     else:
                         new_data.loc[0] = row[features]
+
+    # Print new line
+    print()
 
     # Return new data
     return new_data

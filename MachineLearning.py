@@ -1,7 +1,8 @@
 from sklearn import preprocessing, cross_validation
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.grid_search import GridSearchCV
-from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
+from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, mean_absolute_error, \
+    mean_squared_error, median_absolute_error, r2_score
 from sklearn.ensemble import VotingClassifier
 from sklearn.preprocessing import MinMaxScaler
 import pandas as pd
@@ -58,7 +59,8 @@ def describe_data(data, info=False, describe=False, value_counts=None, unique=No
 def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_features=None):
     # Automatically encode features to numeric
     if encode_auto is not None:
-        data[encode_auto] = preprocessing.LabelEncoder().fit_transform(data[encode_auto])
+        for feature in encode_auto:
+            data[feature] = preprocessing.LabelEncoder().fit_transform(data[feature])
 
     # Manually encode features to numeric
     if encode_man is not None:
@@ -82,8 +84,8 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
 
 
 def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
-            cross_val=None, folds=5, split_accuracy=None, split_classification_report=None, split_confusion_matrix=None,
-            plot=True, grid_search_params=None, description="METRICS:"):
+            cross_val=None, folds=5, scoring="accuracy", split_accuracy=None, split_classification_report=None,
+            split_confusion_matrix=None, plot=True, grid_search_params=None, description="METRICS:"):
     # Feature importances
     def print_feature_importances(alg, name):
         print("Feature Importances [" + name + "]")
@@ -102,13 +104,22 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
     # Cross validation
     def print_cross_val(alg, name):
-        scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring="accuracy")
+        scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
         print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}]".format(scores.mean(), scores.std(), name))
 
     # Split accuracy
     def print_split_accuracy(alg, name, split_name, X_train, X_test, y_train, y_test):
         y_pred = alg.fit(X_train, y_train).predict(X_test)
-        print("{}: {:0.2f} [{}]".format(split_name, accuracy_score(y_test, y_pred), name))
+        if scoring == "accuracy":
+            print("{}: {:0.2f} [{}]".format(split_name, accuracy_score(y_test, y_pred), name))
+        elif scoring == "mean_absolute_error":
+            print("{}: {:0.2f} [{}]".format(split_name, mean_absolute_error(y_test, y_pred), name))
+        elif scoring == "mean_squared_error":
+            print("{}: {:0.2f} [{}]".format(split_name, mean_squared_error(y_test, y_pred), name))
+        elif scoring == "median_absolute_error":
+            print("{}: {:0.2f} [{}]".format(split_name, median_absolute_error(y_test, y_pred), name))
+        elif scoring == "r2":
+            print("{}: {:0.2f} [{}]".format(split_name, r2_score(y_test, y_pred), name))
 
     # Split classification report
     def print_split_classification_report(alg, name, X_train, X_test, y_train, y_test):
@@ -165,7 +176,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         print("Grid Search [{}]".format(name))
 
         # Run grid search
-        grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params)
+        grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring=scoring)
         grid_search.fit(data[predictors], data[target])
 
         # Print best parameters and score
