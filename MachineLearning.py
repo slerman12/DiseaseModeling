@@ -105,7 +105,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     # Cross validation
     def print_cross_val(alg, name):
         scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
-        print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}]".format(scores.mean(), scores.std(), name))
+        print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}]".format(abs(scores.mean()), scores.std(), name))
 
     # Split accuracy
     def print_split_accuracy(alg, name, split_name, X_train, X_test, y_train, y_test):

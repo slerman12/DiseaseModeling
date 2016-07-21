@@ -72,12 +72,12 @@ def main():
     target = "SCORE_NEXT"
 
     # Generate new features
-    train = generate_features(data=pd_control_updrs_data, predictors=predictors, target=target, id_name="PATNO",
-                              score_name="TOTAL",
-                              visit_name="EVENT_ID")
+    # train = generate_features(data=pd_control_updrs_data, predictors=predictors, target=target, id_name="PATNO",
+    #                           score_name="TOTAL",
+    #                           visit_name="EVENT_ID")
 
     # Save generated features data
-    train.to_csv("data/PPMI_train.csv", index=False)
+    # train.to_csv("data/PPMI_train.csv", index=False)
 
     # Retrieve generated features data
     train = pd.read_csv("data/PPMI_train.csv")
@@ -89,7 +89,7 @@ def main():
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
 
     # Algs for model
-    algs = [RandomForestRegressor(n_estimators=500, min_samples_split=75, min_samples_leaf=50, oob_score=True),
+    algs = [RandomForestRegressor(n_estimators=150, min_samples_split=100, min_samples_leaf=25, oob_score=True),
             LogisticRegression(),
             SVC(probability=True),
             GaussianNB(),
@@ -127,7 +127,7 @@ def main():
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                feature_importances=[True], base_score=[True], oob_score=[True],
                cross_val=[True], scoring="mean_absolute_error", split_accuracy=[True],
-               grid_search_params=grid_search_params)
+               grid_search_params=None)
 
 
 def generate_features(data, predictors, target, id_name, score_name, visit_name):
