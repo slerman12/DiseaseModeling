@@ -195,9 +195,9 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         # Print best parameters and score
         print(grid_search.best_params_)
         if scoring == "root_mean_squared_error":
-            print("Cross Validation: {} ({})".format(grid_search.best_score_ ** 0.5, scoring))
+            print("Cross Validation: {} ({})".format(abs(grid_search.best_score_) ** 0.5, scoring))
         else:
-            print("Cross Validation: {} ({})".format(grid_search.best_score_, scoring))
+            print("Cross Validation: {} ({})".format(abs(grid_search.best_score_), scoring))
 
     # Print description of metrics
     if description is not None:

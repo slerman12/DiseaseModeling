@@ -25,7 +25,8 @@ def main():
     pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)]
 
     # Merge with updrs scores
-    pd_control_data = pd_control_data.merge(all_updrs, on=["PATNO", "EVENT_ID"], how="left")
+    pd_control_data = pd_control_data.merge(all_updrs[["PATNO", "EVENT_ID", "TOTAL"]], on=["PATNO", "EVENT_ID"],
+                                            how="left")
 
     # Get rid of nulls for updrs
     pd_control_updrs_data = pd_control_data[pd_control_data["TOTAL"].notnull()]
@@ -33,48 +34,62 @@ def main():
     # Merge with patient info
     pd_control_updrs_data = pd_control_updrs_data.merge(all_patients, on="PATNO", how="left")
 
+    # TODO: Either drop SC, or figure out what do with these visits
     # Only include baseline and subsequent visits
     pd_control_updrs_data = pd_control_updrs_data[
-        (pd_control_updrs_data["EVENT_ID"] != "SC") & (pd_control_updrs_data["EVENT_ID"] != "ST") & (
+        (pd_control_updrs_data["EVENT_ID"] != "ST") & (
             pd_control_updrs_data["EVENT_ID"] != "U01") & (pd_control_updrs_data["EVENT_ID"] != "PW")]
 
-    # Encode EVENT_ID to numeric
+    # TODO: Encode SC differently maybe or only use SC when BL is unavailable
+    # Encode to numeric
     mL.clean_data(data=pd_control_updrs_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED"], encode_man={
-        "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8, "V09": 9,
+        "EVENT_ID": {"SC": 0, "BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8, "V09": 9,
                      "V10": 10, "V11": 11, "V12": 12}})
 
-    # Eliminate features with more than 20% NAs
+    # TODO: Change flexibility with NAs
+    # Eliminate features with more than 70% NAs
     for feature in pd_control_updrs_data.keys():
         if len(pd_control_updrs_data.loc[pd_control_updrs_data[feature].isnull(), feature]) / len(
-                pd_control_updrs_data[feature]) > 0.2:
+                pd_control_updrs_data[feature]) > 0.7:
             pd_control_updrs_data = pd_control_updrs_data.drop(feature, 1)
 
+    # TODO: Rethink this
+    # Eliminate features with more than 70% NA at Baseline
+    for feature in pd_control_updrs_data.keys():
+        if len(pd_control_updrs_data.loc[(pd_control_updrs_data["EVENT_ID"] == 0) & (pd_control_updrs_data[feature].isnull()), feature]) / len(
+                pd_control_updrs_data[pd_control_updrs_data["EVENT_ID"] == 0]) > 0.7:
+            pd_control_updrs_data = pd_control_updrs_data.drop(feature, 1)
+
+    # TODO: Feature imputation
     # Drop rows with NAs
     pd_control_updrs_data = pd_control_updrs_data.dropna()
 
+    # TODO: Ask about this
     # Drop duplicates
     pd_control_updrs_data = pd_control_updrs_data.drop_duplicates(subset=["PATNO", "EVENT_ID"])
 
-    # Predictors for the model
-    predictors = ["VISIT_NEXT", "SCORE_NOW", "TEMPC", "BPARM", "SYSSUP", "DIASUP", "HRSUP", "SYSSTND", "DIASTND",
-                  "HRSTND", "AE", "GENDER.x", "DIAGNOSIS", "CNO", "OTHCOND", "BIOMOM", "BIOMOMPD", "BIODAD", "BIODADPD",
-                  "FULSIB", "FULSIBPD", "HAFSIB", "HAFSIBPD", "MAGPAR", "MAGPARPD", "PAGPAR", "PAGPARPD", "MATAU",
-                  "MATAUPD", "PATAU", "PATAUPD", "KIDSNUM", "KIDSPD", "INITMD", "BIRTHDT.y", "HISPLAT", "RAINDALS",
-                  "RAASIAN", "RABLACK", "RAHAWOPI", "RAWHITE", "RANOS", "EDUCYRS", "HANDED"]
+    # TODO: remove
+    pd_control_updrs_data.to_csv("data/PPMI_NA_Flexibility.csv")
 
+    # TODO: Change predictors depending on the feature selection process done above
+    # Predictors for the model
+    predictors = ["VISIT_NEXT", "SCORE_NOW", "VLTANIM", "VLTVEG", "VLTFRUIT", "STAIAD1", "STAIAD2", "STAIAD3", "STAIAD4", "STAIAD5", "STAIAD6", "STAIAD7", "STAIAD8", "STAIAD9", "STAIAD10", "STAIAD11", "STAIAD12", "STAIAD13", "STAIAD14", "STAIAD15", "STAIAD16", "STAIAD17", "STAIAD18", "STAIAD19", "STAIAD20", "STAIAD21", "STAIAD22", "STAIAD23", "STAIAD24", "STAIAD25", "STAIAD26", "STAIAD27", "STAIAD28", "STAIAD29", "STAIAD30", "STAIAD31", "STAIAD32", "STAIAD33", "STAIAD34", "STAIAD35", "STAIAD36", "STAIAD37", "STAIAD38", "STAIAD39", "STAIAD40", "WGTKG", "HTCM", "TEMPC", "BPARM", "SYSSUP", "DIASUP", "HRSUP", "SYSSTND", "DIASTND", "HRSTND", "AE", "GENDER.x", "DIAGNOSIS", "CNO", "OTHCOND", "BIOMOM", "BIOMOMPD", "BIODAD", "BIODADPD", "FULSIB", "FULSIBPD", "HAFSIB", "HAFSIBPD", "MAGPAR", "MAGPARPD", "PAGPAR", "PAGPARPD", "MATAU", "MATAUPD", "PATAU", "PATAUPD", "KIDSNUM", "KIDSPD", "INITMD", "HISPLAT", "RAINDALS", "RAASIAN", "RABLACK", "RAHAWOPI", "RAWHITE", "RANOS", "EDUCYRS", "HANDED"]
+
+    # TODO: Play around with different targets i.e. updrs subsets or symptomatic milestones
     # Target for the model
     target = "SCORE_NEXT"
 
+    # TODO: Consider predicting a specific future visit instead of any future visit
     # Generate new features
     train = generate_features(data=pd_control_updrs_data, predictors=predictors, target=target, id_name="PATNO",
                               score_name="TOTAL",
                               visit_name="EVENT_ID")
 
     # Save generated features data
-    # train.to_csv("data/PPMI_train.csv", index=False)
+    train.to_csv("data/PPMI_train.csv", index=False)
 
     # Retrieve generated features data
-    # train = pd.read_csv("data/PPMI_train.csv")
+    train = pd.read_csv("data/PPMI_train.csv")
 
     # Value counts for EVENT_ID after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
@@ -107,6 +122,7 @@ def main():
                            "min_samples_split": [4, 8, 25, 50, 75, 100],
                            "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
 
+    # TODO: Configure ensemble
     # Ensemble
     ens = mL.ensemble(algs=algs, alg_names=alg_names,
                       ensemble_name="Weighted ensemble of RF, LR, SVM, GNB, KNN, and GB",
@@ -121,7 +137,7 @@ def main():
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                feature_importances=[True], base_score=[True], oob_score=[True],
                cross_val=[True], scoring="root_mean_squared_error", split_accuracy=[True],
-               grid_search_params=grid_search_params)
+               grid_search_params=None)
 
 
 def generate_features(data, predictors, target, id_name, score_name, visit_name):
