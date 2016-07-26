@@ -62,7 +62,7 @@ def main():
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[
                            (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
     # TODO: Imputation
@@ -86,7 +86,7 @@ def main():
     predictors = list(all_data_features)
 
     # Add generated features to predictors
-    predictors.extend(["SCORE_NOW", "VISIT_NEXT", "NP1", "NP2", "NP3"])
+    predictors.extend(["SCORE_NOW", "TIME_NEXT", "NP1", "NP2", "NP3"])
 
     # Initialize which features to drop from predictors
     drop_predictors = ["PATNO", "EVENT_ID", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3", "PRIMDIAG",
@@ -173,7 +173,7 @@ def generate_features(data, features=None, file="generated_features.csv", action
         # Generate new data set for predicting future visits
         generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
                                              score_name="TOTAL",
-                                             visit_name="EVENT_ID")
+                                             time_name="EVENT_ID")
 
         # Save generated features data
         generated_features.to_csv(file, index=False)
@@ -185,16 +185,16 @@ def generate_features(data, features=None, file="generated_features.csv", action
     return generated_features
 
 
-def generate_future(data, features, id_name, score_name, visit_name):
+def generate_future(data, features, id_name, score_name, time_name):
     # Set features
-    features = features + ["SCORE_NOW", "VISIT_NEXT", "SCORE_NEXT"]
+    features = features + ["SCORE_NOW", "TIME_NOW", "TIME_NEXT", "TIME_PASSED", "SCORE_NEXT"]
 
-    # Set max visit
-    max_visit = data[visit_name].max()
+    # Set max time
+    max_time = data[time_name].max()
 
-    # Generate SCORE_NOW and VISIT_NOW
+    # Generate SCORE_NOW and TIME_NOW
     data["SCORE_NOW"] = data[score_name]
-    data["VISIT_NOW"] = data[visit_name]
+    data["TIME_NOW"] = data[time_name]
 
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
@@ -203,27 +203,27 @@ def generate_future(data, features, id_name, score_name, visit_name):
     progress_complete = 0
     progress_total = len(data)
 
-    # Build new data (generate SCORE_NEXT, VISIT_NEXT, and TIME_PASSED)
+    # Build new data (generate SCORE_NEXT, TIME_NEXT, and TIME_PASSED)
     for index, row in data.iterrows():
         # Update progress
         progress_complete += 1
         sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
         sys.stdout.flush()
 
-        # If now visit isn't the max
-        if row["VISIT_NOW"] == 0:
-            # TODO: Consider predicting a specific future visit instead of any future visit
-            # For the range of all visits after this one
-            for i in range(1, max_visit + 1):
-                # If any future visit belongs to the same patient
-                if any((data["VISIT_NOW"] == row["VISIT_NOW"] + i) & (data[id_name] == row[id_name])):
+        # Check time value(s)
+        if row["TIME_NOW"] == 0:
+            # TODO: Consider predicting a specific future time instead of any future time
+            # For the range of all times after this one
+            for i in range(1, max_time + 1):
+                # If any future time belongs to the same patient
+                if any((data["TIME_NOW"] == row["TIME_NOW"] + i) & (data[id_name] == row[id_name])):
                     # Set next score
-                    row["SCORE_NEXT"] = data.loc[(data["VISIT_NOW"] == row["VISIT_NOW"] + i) &
+                    row["SCORE_NEXT"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
                                                  (data[id_name] == row[id_name]), "SCORE_NOW"].item()
 
-                    # Set next visit
-                    row["VISIT_NEXT"] = data.loc[(data["VISIT_NOW"] == row["VISIT_NOW"] + i) &
-                                                 (data[id_name] == row[id_name]), "VISIT_NOW"].item()
+                    # Set next time
+                    row["TIME_NEXT"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
+                                                (data[id_name] == row[id_name]), "TIME_NOW"].item()
 
                     # Set time passed
                     row["TIME_PASSED"] = i
@@ -249,6 +249,49 @@ def generate_updrs_subsets(data):
 
     # Return new data
     return data
+
+
+def generate_milestones(data, features, id_name, time_name, condition, condition_features):
+    # Set features
+    features = features + ["TIME_NOW", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE"]
+
+    # Create new dataframe
+    new_data = pd.DataFrame(columns=features)
+
+    # Initialize progress measures
+    progress_complete = 0
+    progress_total = len(data)
+
+    # Build new data (generate TIME_NOW, TIME_OF_MILESTONE, and TIME_UNTIL_MILESTONE)
+    for index, row in data.iterrows():
+        # Update progress
+        progress_complete += 1
+        sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
+        sys.stdout.flush()
+
+        # Check time value(s)
+        if row[time_name] == 0:
+            data_id = row[id_name]
+            time_now = row[time_name]
+            time_of_milestone = data.loc[(data[id_name] == data_id) & condition(
+                data[condition_features]), time_name].min()
+            time_until_milestone = time_of_milestone - time_now
+
+            row["TIME_NOW"] = time_now
+            row["TIME_OF_MILESTONE"] = time_of_milestone
+            row["TIME_UNTIL_MILESTONE"] = time_until_milestone
+
+            # Add row to new_data
+            if not math.isnan(new_data.index.max()):
+                new_data.loc[new_data.index.max() + 1] = row[features]
+            else:
+                new_data.loc[0] = row[features]
+
+    # Print new line
+    print()
+
+    # Return new data
+    return new_data
 
 
 if __name__ == "__main__":
