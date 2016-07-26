@@ -1,6 +1,7 @@
 import math
 import pandas as pd
 import numpy as np
+from scipy import stats
 import sys
 import MachineLearning as mL
 from sklearn.ensemble import RandomForestRegressor
@@ -62,7 +63,7 @@ def main():
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[
                            (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
     # TODO: Imputation
@@ -77,7 +78,7 @@ def main():
 
     # Generate features
     train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
-                              action=True)
+                              action=False)
 
     # Data diagnostics after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
@@ -86,19 +87,12 @@ def main():
     predictors = list(all_data_features)
 
     # Add generated features to predictors
-    predictors.extend(["SCORE_NOW", "TIME_NEXT", "NP1", "NP2", "NP3"])
+    predictors.extend(["NP1", "NP2", "NP3"])
 
     # Initialize which features to drop from predictors
-    drop_predictors = ["PATNO", "EVENT_ID", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3", "PRIMDIAG",
+    drop_predictors = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3", "PRIMDIAG",
                        "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
-                       "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "NP1SLPN", "NP1SLPD",
-                       "NP1PAIN", "NP1URIN", "NP1CNST", "NP1LTHD", "NP1FATG", "NP2SPCH", "NP2SALV", "NP2SWAL", "NP2EAT",
-                       "NP2DRES", "NP2HYGN", "NP2HWRT", "NP2HOBB", "NP2TURN", "NP2TRMR", "NP2RISE", "NP2WALK",
-                       "NP2FREZ", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU", "NP3RIGLU", "PN3RIGRL", "NP3RIGLL",
-                       "NP3FTAPR", "NP3FTAPL", "NP3HMOVR", "NP3HMOVL", "NP3PRSPR", "NP3PRSPL", "NP3TTAPR", "NP3TTAPL",
-                       "NP3LGAGR", "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL", "NP3POSTR", "NP3BRADY",
-                       "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU", "NP3RTALU", "NP3RTARL", "NP3RTALL",
-                       "NP3RTALJ", "NP3RTCON", "TOTAL"]
+                       "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO"]
 
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
@@ -107,7 +101,7 @@ def main():
 
     # TODO: Play around with different targets i.e. UPDRS subsets or symptomatic milestones
     # Target for the model
-    target = "SCORE_NEXT"
+    target = "SCORE_SLOPE"
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
@@ -171,9 +165,20 @@ def generate_features(data, features=None, file="generated_features.csv", action
         features = features + ["NP1", "NP2", "NP3"]
 
         # Generate new data set for predicting future visits
-        generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
-                                             score_name="TOTAL",
-                                             time_name="EVENT_ID")
+        # generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
+        #                                      score_name="TOTAL", time_name="EVENT_ID")
+
+        # Condition for generating milestone
+        def milestone_condition(data):
+            return (data["NP2WALK"] >= 2) | (data["NP3GAIT"] >= 3)
+
+        # Generate new data set for predicting future milestones
+        # generated_features = generate_milestones(data=generated_features, features=features, id_name="PATNO",
+        #                                          time_name="EVENT_ID", condition=milestone_condition)
+
+        # Generate new data set for predicting future visits
+        generated_features = generate_slopes(data=generated_features, features=features, id_name="PATNO",
+                                             score_name="TOTAL", time_name="EVENT_ID")
 
         # Save generated features data
         generated_features.to_csv(file, index=False)
@@ -187,7 +192,7 @@ def generate_features(data, features=None, file="generated_features.csv", action
 
 def generate_future(data, features, id_name, score_name, time_name):
     # Set features
-    features = features + ["SCORE_NOW", "TIME_NOW", "TIME_NEXT", "TIME_PASSED", "SCORE_NEXT"]
+    features = features + ["SCORE_NOW", "TIME_NOW", "TIME_FUTURE", "TIME_PASSED", "SCORE_FUTURE"]
 
     # Set max time
     max_time = data[time_name].max()
@@ -203,7 +208,7 @@ def generate_future(data, features, id_name, score_name, time_name):
     progress_complete = 0
     progress_total = len(data)
 
-    # Build new data (generate SCORE_NEXT, TIME_NEXT, and TIME_PASSED)
+    # Iterate through rows and build new data (generate SCORE_FUTURE, TIME_FUTURE, and TIME_PASSED)
     for index, row in data.iterrows():
         # Update progress
         progress_complete += 1
@@ -218,12 +223,12 @@ def generate_future(data, features, id_name, score_name, time_name):
                 # If any future time belongs to the same patient
                 if any((data["TIME_NOW"] == row["TIME_NOW"] + i) & (data[id_name] == row[id_name])):
                     # Set next score
-                    row["SCORE_NEXT"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
-                                                 (data[id_name] == row[id_name]), "SCORE_NOW"].item()
+                    row["SCORE_FUTURE"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
+                                                   (data[id_name] == row[id_name]), "SCORE_NOW"].item()
 
                     # Set next time
-                    row["TIME_NEXT"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
-                                                (data[id_name] == row[id_name]), "TIME_NOW"].item()
+                    row["TIME_FUTURE"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
+                                                  (data[id_name] == row[id_name]), "TIME_NOW"].item()
 
                     # Set time passed
                     row["TIME_PASSED"] = i
@@ -241,17 +246,7 @@ def generate_future(data, features, id_name, score_name, time_name):
     return new_data
 
 
-def generate_updrs_subsets(data):
-    # Sum UPDRS subsets
-    data["NP1"] = data.filter(regex="NP1.*").sum(axis=1)
-    data["NP2"] = data.filter(regex="NP2.*").sum(axis=1)
-    data["NP3"] = data.filter(regex="NP3.*").sum(axis=1)
-
-    # Return new data
-    return data
-
-
-def generate_milestones(data, features, id_name, time_name, condition, condition_features):
+def generate_milestones(data, features, id_name, time_name, condition):
     # Set features
     features = features + ["TIME_NOW", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE"]
 
@@ -262,21 +257,29 @@ def generate_milestones(data, features, id_name, time_name, condition, condition
     progress_complete = 0
     progress_total = len(data)
 
-    # Build new data (generate TIME_NOW, TIME_OF_MILESTONE, and TIME_UNTIL_MILESTONE)
+    # Iterate through rows and build new data (generate TIME_NOW, TIME_OF_MILESTONE, and TIME_UNTIL_MILESTONE)
     for index, row in data.iterrows():
         # Update progress
         progress_complete += 1
         sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
         sys.stdout.flush()
 
-        # Check time value(s)
-        if row[time_name] == 0:
-            data_id = row[id_name]
-            time_now = row[time_name]
-            time_of_milestone = data.loc[(data[id_name] == data_id) & condition(
-                data[condition_features]), time_name].min()
+        # Set ID
+        data_id = row[id_name]
+
+        # Set time now
+        time_now = row[time_name]
+
+        # Check time value(s) and make sure the condition is met for a sample with this ID
+        if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
+            # Time of milestone
+            time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
+                data)), time_name].min()
+
+            # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
 
+            # Set features
             row["TIME_NOW"] = time_now
             row["TIME_OF_MILESTONE"] = time_of_milestone
             row["TIME_UNTIL_MILESTONE"] = time_until_milestone
@@ -292,6 +295,66 @@ def generate_milestones(data, features, id_name, time_name, condition, condition
 
     # Return new data
     return new_data
+
+
+def generate_slopes(data, features, id_name, time_name, score_name):
+    # Set features
+    features = features + ["SCORE_SLOPE"]
+
+    # Create new dataframe
+    new_data = pd.DataFrame(columns=features)
+
+    # Initialize progress measures
+    progress_complete = 0
+    progress_total = len(data)
+
+    # Iterate through rows and build new data (generate TIME_NOW, TIME_OF_MILESTONE, and TIME_UNTIL_MILESTONE)
+    for index, row in data.iterrows():
+        # Update progress
+        progress_complete += 1
+        sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
+        sys.stdout.flush()
+
+        # Set ID
+        data_id = row[id_name]
+
+        # Set time now
+        time_now = row[time_name]
+
+        # Check time value(s) and make sure the condition is met for a sample with this ID
+        if time_now == 0:
+            # Variables for linear regression
+            x = data.loc[data[id_name] == data_id, score_name]
+            y = data.loc[data[id_name] == data_id, time_name]
+
+            # Linear regression
+            if any(x) and any(y):
+                slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+
+                # Set score slope
+                row["SCORE_SLOPE"] = slope
+
+                # Add row to new_data
+                if not math.isnan(new_data.index.max()):
+                    new_data.loc[new_data.index.max() + 1] = row[features]
+                else:
+                    new_data.loc[0] = row[features]
+
+    # Print new line
+    print()
+
+    # Return new data
+    return new_data
+
+
+def generate_updrs_subsets(data):
+    # Sum UPDRS subsets
+    data["NP1"] = data.filter(regex="NP1.*").sum(axis=1)
+    data["NP2"] = data.filter(regex="NP2.*").sum(axis=1)
+    data["NP3"] = data.filter(regex="NP3.*").sum(axis=1)
+
+    # Return new data
+    return data
 
 
 if __name__ == "__main__":
