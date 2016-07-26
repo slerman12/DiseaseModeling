@@ -28,31 +28,29 @@ def main():
     # Data for these patients
     pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)]
 
-    # Merge with updrs scores
+    # Merge with UPDRS scores
     pd_control_data = pd_control_data.merge(all_updrs[["PATNO", "EVENT_ID", "TOTAL"]], on=["PATNO", "EVENT_ID"],
                                             how="left")
 
-    # Get rid of nulls for updrs
+    # Get rid of nulls for UPDRS
     pd_control_data = pd_control_data[pd_control_data["TOTAL"].notnull()]
 
     # Merge with patient info
     pd_control_data = pd_control_data.merge(all_patients, on="PATNO", how="left")
 
-    # TODO: Either drop SC, or figure out what do with these visits
+    # TODO: Figure out what do with SC
     # Only include baseline and subsequent visits
     pd_control_data = pd_control_data[
         (pd_control_data["EVENT_ID"] != "ST") & (
             pd_control_data["EVENT_ID"] != "U01") & (pd_control_data["EVENT_ID"] != "PW") & (
             pd_control_data["EVENT_ID"] != "SC")]
 
-    # TODO: Encode SC differently maybe or only use SC when BL is unavailable
     # Encode to numeric
     mL.clean_data(data=pd_control_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
-                     "V09": 9,
-                     "V10": 10, "V11": 11, "V12": 12}})
+                     "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
 
-    # TODO: Change flexibility with NAs
+    # TODO: Optimize flexibility with NAs
     # Eliminate features with more than 20% NAs
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[pd_control_data[feature].isnull(), feature]) / len(
@@ -67,7 +65,7 @@ def main():
                 pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
-    # TODO: Feature imputation
+    # TODO: Imputation
     # Drop rows with NAs
     pd_control_data = pd_control_data.dropna()
 
@@ -79,7 +77,10 @@ def main():
 
     # Generate features
     train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
-                              action=False)
+                              action=True)
+
+    # Data diagnostics after feature generation
+    mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
 
     # Initialize predictors as all features
     predictors = list(all_data_features)
@@ -88,7 +89,7 @@ def main():
     predictors.extend(["SCORE_NOW", "VISIT_NEXT", "NP1", "NP2", "NP3"])
 
     # Initialize which features to drop from predictors
-    drop_predictors = ["PATNO", "EVENT_ID", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3", "PRIMDIAG", "TOTAL",
+    drop_predictors = ["PATNO", "EVENT_ID", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3", "PRIMDIAG",
                        "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
                        "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "NP1SLPN", "NP1SLPD",
                        "NP1PAIN", "NP1URIN", "NP1CNST", "NP1LTHD", "NP1FATG", "NP2SPCH", "NP2SALV", "NP2SWAL", "NP2EAT",
@@ -97,19 +98,16 @@ def main():
                        "NP3FTAPR", "NP3FTAPL", "NP3HMOVR", "NP3HMOVL", "NP3PRSPR", "NP3PRSPL", "NP3TTAPR", "NP3TTAPL",
                        "NP3LGAGR", "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL", "NP3POSTR", "NP3BRADY",
                        "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU", "NP3RTALU", "NP3RTARL", "NP3RTALL",
-                       "NP3RTALJ", "NP3RTCON"]
+                       "NP3RTALJ", "NP3RTCON", "TOTAL"]
 
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
         if feature in predictors:
             predictors.remove(feature)
 
-    # TODO: Play around with different targets i.e. updrs subsets or symptomatic milestones
+    # TODO: Play around with different targets i.e. UPDRS subsets or symptomatic milestones
     # Target for the model
     target = "SCORE_NEXT"
-
-    # Value counts for EVENT_ID after feature generation
-    mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
@@ -135,11 +133,6 @@ def main():
                  "kNN",
                  "Gradient Boosting"]
 
-    # Parameters for grid search
-    grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
-                           "min_samples_split": [4, 8, 25, 50, 75, 100],
-                           "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
-
     # TODO: Configure ensemble
     # Ensemble
     ens = mL.ensemble(algs=algs, alg_names=alg_names,
@@ -151,10 +144,15 @@ def main():
     # algs.append(ens["alg"])
     # alg_names.append(ens["name"])
 
+    # Parameters for grid search
+    grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
+                           "min_samples_split": [4, 8, 25, 50, 75, 100],
+                           "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
+
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                feature_importances=[True], base_score=[True], oob_score=[True],
-               cross_val=[True], scoring="mean_absolute_error", split_accuracy=[True],
+               cross_val=[True], scoring="r2", split_accuracy=[True],
                grid_search_params=None)
 
 
@@ -166,13 +164,16 @@ def generate_features(data, features=None, file="generated_features.csv", action
 
     # Generate features or use pre-generated features
     if action:
+        # Generate UPDRS subset sums
+        generated_features = generate_updrs_subsets(data=data)
+
+        # Add generated features to features list
+        features = features + ["NP1", "NP2", "NP3"]
+
         # Generate new data set for predicting future visits
-        generated_features = generate_future(data=data, features=features, id_name="PATNO",
+        generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
                                              score_name="TOTAL",
                                              visit_name="EVENT_ID")
-
-        # Generate features for updrs subset sums
-        generated_features = generate_updrs_subsets(data=generated_features)
 
         # Save generated features data
         generated_features.to_csv(file, index=False)
@@ -241,7 +242,7 @@ def generate_future(data, features, id_name, score_name, visit_name):
 
 
 def generate_updrs_subsets(data):
-    # Sum updrs subsets
+    # Sum UPDRS subsets
     data["NP1"] = data.filter(regex="NP1.*").sum(axis=1)
     data["NP2"] = data.filter(regex="NP2.*").sum(axis=1)
     data["NP3"] = data.filter(regex="NP3.*").sum(axis=1)

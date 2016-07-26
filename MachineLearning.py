@@ -68,8 +68,18 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
             for cur_value, new_value in encoding.items():
                 data.loc[data[feature] == cur_value, feature] = new_value
 
-    # Fill missing values
-    if fillna is not None:
+    # Fill missing values either all at once or by feature depending on input type
+    if isinstance(fillna, str):
+        # Only fill on numeric features
+        numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+        for feature in data.select_dtypes(include=numerics).keys():
+            if fillna == "median":
+                data[feature] = data[feature].fillna(data[feature].median())
+            if fillna == "mean":
+                data[feature] = data[feature].fillna(data[feature].mean())
+            if fillna == "mode":
+                data[feature] = data[feature].fillna(data[feature].mode())
+    elif fillna is not None:
         for feature, method in fillna:
             if method == "median":
                 data[feature] = data[feature].fillna(data[feature].median())
