@@ -63,7 +63,7 @@ def main():
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[
                            (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
     # TODO: Imputation
@@ -76,9 +76,9 @@ def main():
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
 
-    # Generate features
+    # Generate features (and update all features list)
     train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
-                              action=False)
+                              action=True)
 
     # Data diagnostics after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
@@ -86,13 +86,24 @@ def main():
     # Initialize predictors as all features
     predictors = list(all_data_features)
 
-    # Add generated features to predictors
-    predictors.extend(["NP1", "NP2", "NP3"])
-
     # Initialize which features to drop from predictors
     drop_predictors = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3", "PRIMDIAG",
                        "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
-                       "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO"]
+                       "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "TIME_FUTURE", "TIME_NOW",
+                       "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE", "TOTAL"]
+
+    # List of UPDRS components
+    updrs_components = ["NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", "NP1APAT", "NP1DDS", "NP1SLPN", "NP1SLPD", "NP1PAIN",
+                        "NP1URIN", "NP1CNST", "NP1LTHD", "NP1FATG", "NP2SPCH", "NP2SALV", "NP2SWAL", "NP2EAT",
+                        "NP2DRES", "NP2HYGN", "NP2HWRT", "NP2HOBB", "NP2TURN", "NP2TRMR", "NP2RISE", "NP2WALK",
+                        "NP2FREZ", "PAG_UPDRS3", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU", "NP3RIGLU", "PN3RIGRL",
+                        "NP3RIGLL", "NP3FTAPR", "NP3FTAPL", "NP3HMOVR", "NP3HMOVL", "NP3PRSPR", "NP3PRSPL", "NP3TTAPR",
+                        "NP3TTAPL", "NP3LGAGR", "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL", "NP3POSTR",
+                        "NP3BRADY", "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU", "NP3RTALU", "NP3RTARL",
+                        "NP3RTALL", "NP3RTALJ", "NP3RTCON"]
+
+    # Drop UPDRS components
+    drop_predictors.extend(updrs_components)
 
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
@@ -101,13 +112,15 @@ def main():
 
     # TODO: Play around with different targets i.e. UPDRS subsets or symptomatic milestones
     # Target for the model
-    target = "SCORE_SLOPE"
+    target = "SCORE_FUTURE"
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
 
     # Algs for model
-    # Grid search: n_estimators=50, min_samples_split=75, min_samples_leaf=50
+    # Grid search (futures): n_estimators=50, min_samples_split=75, min_samples_leaf=50
+    # Futures: n_estimators=150, min_samples_split=100, min_samples_leaf=25
+    # Grid search (slopes): 'min_samples_split': 75, 'n_estimators': 50, 'min_samples_leaf': 25
     algs = [RandomForestRegressor(n_estimators=150, min_samples_split=100, min_samples_leaf=25, oob_score=True),
             LogisticRegression(),
             SVC(probability=True),
@@ -159,26 +172,23 @@ def generate_features(data, features=None, file="generated_features.csv", action
     # Generate features or use pre-generated features
     if action:
         # Generate UPDRS subset sums
-        generated_features = generate_updrs_subsets(data=data)
-
-        # Add generated features to features list
-        features = features + ["NP1", "NP2", "NP3"]
+        generated_features = generate_updrs_subsets(data=data, features=features)
 
         # Generate new data set for predicting future visits
-        # generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
-        #                                      score_name="TOTAL", time_name="EVENT_ID")
+        generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
+                                             score_name="TOTAL", time_name="EVENT_ID")
 
-        # Condition for generating milestone
-        def milestone_condition(data):
+        # Condition(s) for generating milestone
+        def milestone_walking_disability(data):
             return (data["NP2WALK"] >= 2) | (data["NP3GAIT"] >= 3)
 
         # Generate new data set for predicting future milestones
         # generated_features = generate_milestones(data=generated_features, features=features, id_name="PATNO",
-        #                                          time_name="EVENT_ID", condition=milestone_condition)
+        #                                          time_name="EVENT_ID", condition=milestone_walking_disability)
 
         # Generate new data set for predicting future visits
-        generated_features = generate_slopes(data=generated_features, features=features, id_name="PATNO",
-                                             score_name="TOTAL", time_name="EVENT_ID")
+        # generated_features = generate_slopes(data=generated_features, features=features, id_name="PATNO",
+        #                                      score_name="TOTAL", time_name="EVENT_ID")
 
         # Save generated features data
         generated_features.to_csv(file, index=False)
@@ -192,7 +202,7 @@ def generate_features(data, features=None, file="generated_features.csv", action
 
 def generate_future(data, features, id_name, score_name, time_name):
     # Set features
-    features = features + ["SCORE_NOW", "TIME_NOW", "TIME_FUTURE", "TIME_PASSED", "SCORE_FUTURE"]
+    features.extend(["SCORE_NOW", "TIME_NOW", "TIME_FUTURE", "TIME_PASSED", "SCORE_FUTURE"])
 
     # Set max time
     max_time = data[time_name].max()
@@ -248,7 +258,7 @@ def generate_future(data, features, id_name, score_name, time_name):
 
 def generate_milestones(data, features, id_name, time_name, condition):
     # Set features
-    features = features + ["TIME_NOW", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE"]
+    features.extend(["TIME_NOW", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE"])
 
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
@@ -299,7 +309,7 @@ def generate_milestones(data, features, id_name, time_name, condition):
 
 def generate_slopes(data, features, id_name, time_name, score_name):
     # Set features
-    features = features + ["SCORE_SLOPE"]
+    features.extend(["SCORE_SLOPE", "TIME_NOW"])
 
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
@@ -321,7 +331,7 @@ def generate_slopes(data, features, id_name, time_name, score_name):
         # Set time now
         time_now = row[time_name]
 
-        # Check time value(s) and make sure the condition is met for a sample with this ID
+        # Check time value(s)
         if time_now == 0:
             # Variables for linear regression
             x = data.loc[data[id_name] == data_id, score_name]
@@ -331,8 +341,9 @@ def generate_slopes(data, features, id_name, time_name, score_name):
             if any(x) and any(y):
                 slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
 
-                # Set score slope
+                # Set features
                 row["SCORE_SLOPE"] = slope
+                row["TIME_NOW"] = time_now
 
                 # Add row to new_data
                 if not math.isnan(new_data.index.max()):
@@ -347,7 +358,10 @@ def generate_slopes(data, features, id_name, time_name, score_name):
     return new_data
 
 
-def generate_updrs_subsets(data):
+def generate_updrs_subsets(data, features):
+    # Set features
+    features.extend(["NP1", "NP2", "NP3"])
+
     # Sum UPDRS subsets
     data["NP1"] = data.filter(regex="NP1.*").sum(axis=1)
     data["NP2"] = data.filter(regex="NP2.*").sum(axis=1)
