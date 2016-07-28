@@ -64,7 +64,7 @@ def main():
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[
                            (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
     # TODO: Imputation
@@ -76,7 +76,7 @@ def main():
 
     # Drop patients without BL data
     for patient in pd_control_data["PATNO"].unique():
-        if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"]:
+        if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"].unique():
             pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
 
     # Select all features in the data set
