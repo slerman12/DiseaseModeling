@@ -68,17 +68,17 @@ def main():
             pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
-    # Drop patients without BL data
-    for patient in pd_control_data["PATNO"].unique():
-        if not any(pd_control_data[(pd_control_data["PATNO"] == patient) & pd_control_data["EVENT_ID"] == 0]):
-            pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
-
     # TODO: Imputation
     # Drop rows with NAs
     pd_control_data = pd_control_data.dropna()
 
     # Drop duplicates (keep first, delete others)
     pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"])
+
+    # Drop patients without BL data
+    for patient in pd_control_data["PATNO"].unique():
+        if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"]:
+            pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
 
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
@@ -412,13 +412,6 @@ def generate_months(data, features, id_name, time_name, datetime_name, birthday_
     for data_id in data[id_name].unique():
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
-
-        print(data_id)
-        print(baseline_date)
-        print(now_date.iloc[2])
-        print(now_date.iloc[2] - baseline_date)
-        print(data[data[id_name] == data_id])
-
         data.loc[data[id_name] == data_id, "MONTHS_FROM_BL"] = (now_date - baseline_date).apply(
             lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
