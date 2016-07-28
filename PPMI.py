@@ -21,6 +21,7 @@ def main():
     all_patients = pd.read_csv("data/all_pats.csv")
     all_visits = pd.read_csv("data/all_visits.csv")
     all_updrs = pd.read_csv("data/all_updrs.csv")
+    all_updrs_subcomponents = pd.read_csv("data/itemizedDistributionOfUPDRSMeaning_Use.csv")
 
     # Enrolled PD / Control patients
     pd_control_patients = all_patients.loc[
@@ -82,9 +83,13 @@ def main():
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
 
+    # Name of primary score
+    score_name = "TOTAL"
+
     # Generate features (and update all features list)
     train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
-                              action=True, updrs_subsets=True, time=True, future=True, milestones=False, slopes=False)
+                              action=True, updrs_subsets=True, time=True, future=True, milestones=False, slopes=False,
+                              score_name=score_name)
 
     # Data diagnostics after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
@@ -97,7 +102,7 @@ def main():
                        "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
                        "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "TIME_FUTURE", "TIME_NOW",
                        "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y",
-                       "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM", "TIME_FROM_BL", "TOTAL"]
+                       "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM", "TIME_FROM_BL", score_name]
 
     # List of UPDRS components
     updrs_components = ["NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", "NP1APAT", "NP1DDS", "NP1SLPN", "NP1SLPD", "NP1PAIN",
@@ -170,7 +175,7 @@ def main():
 
 
 def generate_features(data, features=None, file="generated_features.csv", action=True, updrs_subsets=True, time=True,
-                      future=True, milestones=False, slopes=False):
+                      future=True, milestones=False, slopes=False, score_name="TOTAL"):
     # Initialize features if None
     if features is None:
         # Empty list
@@ -197,7 +202,7 @@ def generate_features(data, features=None, file="generated_features.csv", action
         # Generate new data set for predicting future visits
         if future:
             generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
-                                                 score_name="TOTAL", time_name=time_name)
+                                                 score_name=score_name, time_name=time_name)
 
         # Condition(s) for generating milestone
         def milestone_debilitating_tremor(milestone_data):
@@ -217,7 +222,7 @@ def generate_features(data, features=None, file="generated_features.csv", action
         # Generate new data set for predicting future visits
         if slopes:
             generated_features = generate_slopes(data=generated_features, features=features, id_name="PATNO",
-                                                 score_name="TOTAL", time_name=time_name)
+                                                 score_name=score_name, time_name=time_name)
 
         # Save generated features data
         generated_features.to_csv(file, index=False)
