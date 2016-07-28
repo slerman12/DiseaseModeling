@@ -83,119 +83,118 @@ def main():
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
 
-    # Score name, milestone feature, and milestone_value
-    score_name = "TOTAL"
-    milestone_feature = "NP2TRMR"
-    milestone_value = 0
+    for updrs_subscomponent in all_updrs_subcomponents["colname"].tolist():
+        print(updrs_subscomponent)
+        for i in range(0, 4):
+            if all_updrs_subcomponents.loc[
+                        all_updrs_subcomponents["colname"] == updrs_subscomponent, "use{}".format(i)].min() == 1:
+                # Generate features (and update all features list)
+                train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
+                                          action=True, updrs_subsets=True, time=True, future=False, milestones=True,
+                                          slopes=False, score_name=updrs_subscomponent,
+                                          milestone_feature=updrs_subscomponent, milestone_value=i)
 
-    # Generate features (and update all features list)
-    train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
-                              action=True, updrs_subsets=True, time=True, future=False, milestones=True,
-                              slopes=False, score_name=score_name, milestone_feature=milestone_feature,
-                              milestone_value=milestone_value)
+                # Initialize predictors as all features
+                predictors = list(train.columns.values)
 
-    # Data diagnostics after feature generation
-    mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
+                # Initialize which features to drop from predictors
+                drop_predictors = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3",
+                                   "PRIMDIAG",
+                                   "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                                   "ENROLL_CAT",
+                                   "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "TIME_FUTURE",
+                                   "TIME_NOW",
+                                   "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE",
+                                   "BIRTHDT.y",
+                                   "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM", "TIME_FROM_BL"]
 
-    # Initialize predictors as all features
-    predictors = list(train.columns.values)
+                # List of UPDRS components
+                updrs_components = ["NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", "NP1APAT", "NP1DDS", "NP1SLPN",
+                                    "NP1SLPD",
+                                    "NP1PAIN",
+                                    "NP1URIN", "NP1CNST", "NP1LTHD", "NP1FATG", "NP2SPCH", "NP2SALV", "NP2SWAL",
+                                    "NP2EAT",
+                                    "NP2DRES", "NP2HYGN", "NP2HWRT", "NP2HOBB", "NP2TURN", "NP2TRMR", "NP2RISE",
+                                    "NP2WALK",
+                                    "NP2FREZ", "PAG_UPDRS3", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU", "NP3RIGLU",
+                                    "PN3RIGRL",
+                                    "NP3RIGLL", "NP3FTAPR", "NP3FTAPL", "NP3HMOVR", "NP3HMOVL", "NP3PRSPR", "NP3PRSPL",
+                                    "NP3TTAPR",
+                                    "NP3TTAPL", "NP3LGAGR", "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL",
+                                    "NP3POSTR",
+                                    "NP3BRADY", "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU", "NP3RTALU",
+                                    "NP3RTARL",
+                                    "NP3RTALL", "NP3RTALJ", "NP3RTCON"]
 
-    # Initialize which features to drop from predictors
-    drop_predictors = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3",
-                       "PRIMDIAG",
-                       "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
-                       "ENROLL_CAT",
-                       "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "TIME_FUTURE",
-                       "TIME_NOW",
-                       "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE",
-                       "BIRTHDT.y",
-                       "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM", "TIME_FROM_BL"]
+                # Drop UPDRS components
+                # drop_predictors.extend(updrs_components)
 
-    # List of UPDRS components
-    updrs_components = ["NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", "NP1APAT", "NP1DDS", "NP1SLPN",
-                        "NP1SLPD",
-                        "NP1PAIN",
-                        "NP1URIN", "NP1CNST", "NP1LTHD", "NP1FATG", "NP2SPCH", "NP2SALV", "NP2SWAL",
-                        "NP2EAT",
-                        "NP2DRES", "NP2HYGN", "NP2HWRT", "NP2HOBB", "NP2TURN", "NP2TRMR", "NP2RISE",
-                        "NP2WALK",
-                        "NP2FREZ", "PAG_UPDRS3", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU", "NP3RIGLU",
-                        "PN3RIGRL",
-                        "NP3RIGLL", "NP3FTAPR", "NP3FTAPL", "NP3HMOVR", "NP3HMOVL", "NP3PRSPR", "NP3PRSPL",
-                        "NP3TTAPR",
-                        "NP3TTAPL", "NP3LGAGR", "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL",
-                        "NP3POSTR",
-                        "NP3BRADY", "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU", "NP3RTALU",
-                        "NP3RTARL",
-                        "NP3RTALL", "NP3RTALJ", "NP3RTCON"]
+                # Drop unwanted features from predictors list
+                for feature in drop_predictors:
+                    if feature in predictors:
+                        predictors.remove(feature)
 
-    # Drop UPDRS components
-    # drop_predictors.extend(updrs_components)
+                # Target for the model
+                target = "TIME_UNTIL_MILESTONE"
 
-    # Drop unwanted features from predictors list
-    for feature in drop_predictors:
-        if feature in predictors:
-            predictors.remove(feature)
+                # Algs for model
+                # Grid search (futures): n_estimators=50, min_samples_split=75, min_samples_leaf=50
+                # Futures: n_estimators=150, min_samples_split=100, min_samples_leaf=25
+                # Grid search (slopes): 'min_samples_split': 75, 'n_estimators': 50, 'min_samples_leaf': 25
+                algs = [
+                    RandomForestRegressor(n_estimators=150, min_samples_split=100, min_samples_leaf=25, oob_score=True),
+                    LogisticRegression(),
+                    SVC(probability=True),
+                    GaussianNB(),
+                    MultinomialNB(),
+                    BernoulliNB(),
+                    KNeighborsClassifier(n_neighbors=25),
+                    GradientBoostingClassifier(n_estimators=10, max_depth=3)]
 
-    # Target for the model
-    target = "TIME_UNTIL_MILESTONE"
+                # Alg names for model
+                alg_names = ["Random Forest",
+                             "Logistic Regression",
+                             "SVM",
+                             "Gaussian Naive Bayes",
+                             "Multinomial Naive Bayes",
+                             "Bernoulli Naive Bayes",
+                             "kNN",
+                             "Gradient Boosting"]
 
-    # Univariate feature selection
-    mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
+                # TODO: Configure ensemble
+                # Ensemble
+                ens = mL.ensemble(algs=algs, alg_names=alg_names,
+                                  ensemble_name="Weighted ensemble of RF, LR, SVM, GNB, KNN, and GB",
+                                  in_ensemble=[True, True, True, True, False, False, True, True],
+                                  weights=[3, 2, 1, 3, 1, 3],
+                                  voting="soft")
 
-    # Algs for model
-    # Grid search (futures): n_estimators=50, min_samples_split=75, min_samples_leaf=50
-    # Futures: n_estimators=150, min_samples_split=100, min_samples_leaf=25
-    # Grid search (slopes): 'min_samples_split': 75, 'n_estimators': 50, 'min_samples_leaf': 25
-    algs = [
-        RandomForestRegressor(n_estimators=150, min_samples_split=100, min_samples_leaf=25, oob_score=True),
-        LogisticRegression(),
-        SVC(probability=True),
-        GaussianNB(),
-        MultinomialNB(),
-        BernoulliNB(),
-        KNeighborsClassifier(n_neighbors=25),
-        GradientBoostingClassifier(n_estimators=10, max_depth=3)]
+                # Add ensemble to algs and alg_names
+                # algs.append(ens["alg"])
+                # alg_names.append(ens["name"])
 
-    # Alg names for model
-    alg_names = ["Random Forest",
-                 "Logistic Regression",
-                 "SVM",
-                 "Gaussian Naive Bayes",
-                 "Multinomial Naive Bayes",
-                 "Bernoulli Naive Bayes",
-                 "kNN",
-                 "Gradient Boosting"]
+                # Parameters for grid search
+                grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
+                                       "min_samples_split": [4, 8, 25, 50, 75, 100],
+                                       "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
 
-    # TODO: Configure ensemble
-    # Ensemble
-    ens = mL.ensemble(algs=algs, alg_names=alg_names,
-                      ensemble_name="Weighted ensemble of RF, LR, SVM, GNB, KNN, and GB",
-                      in_ensemble=[True, True, True, True, False, False, True, True],
-                      weights=[3, 2, 1, 3, 1, 3],
-                      voting="soft")
+                # Display ensemble metrics
+                metrics1 = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                                     cross_val=[True], scoring="r2")
 
-    # Add ensemble to algs and alg_names
-    # algs.append(ens["alg"])
-    # alg_names.append(ens["name"])
+                all_updrs_subcomponents.loc[
+                    all_updrs_subcomponents["colname"] == updrs_subscomponent, "over{}_r2".format(i)] = \
+                    metrics1["Cross Validation r2"]
 
-    # Parameters for grid search
-    grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
-                           "min_samples_split": [4, 8, 25, 50, 75, 100],
-                           "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
+                # Display ensemble metrics
+                metrics2 = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                                     cross_val=[True], scoring="root_mean_squared_error")
 
-    # Display ensemble metrics
-    metrics = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                         feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
-                         scoring="r2")
+                all_updrs_subcomponents.loc[
+                    all_updrs_subcomponents["colname"] == updrs_subscomponent, "over{}_rmse".format(i)] = \
+                    metrics2["Cross Validation root_mean_squared_error"]
 
-    print(metrics["Cross Validation r2"])
-
-    # Display ensemble metrics
-    metrics = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                         cross_val=[True], scoring="root_mean_squared_error", description=None)
-
-    print(metrics["Cross Validation root_mean_squared_error"])
+    all_updrs_subcomponents.to_csv("data/updrs_subcomponents_scores.csv")
 
 
 def generate_features(data, features=None, file="generated_features.csv", action=True, updrs_subsets=True, time=True,

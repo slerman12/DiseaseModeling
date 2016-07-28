@@ -96,6 +96,9 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
 def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
             cross_val=None, folds=5, scoring="accuracy", split_accuracy=None, split_classification_report=None,
             split_confusion_matrix=None, plot=True, grid_search_params=None, description="METRICS:"):
+    # Output list
+    output_set = {}
+
     # Feature importances
     def print_feature_importances(alg, name):
         print("Feature Importances [" + name + "]")
@@ -105,11 +108,13 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     # Base score estimate
     def print_base_score(alg, name):
         score = alg.score(data[predictors], data[target])
+        output_set["Base Score"] = score
         print("Base Score: {} [{}]".format(score, name))
 
     # Out of bag estimate
     def print_oob_score(alg, name):
         score = alg.oob_score_
+        output_set["OOB Score"] = score
         print("OOB Score: {} [{}]".format(score, name))
 
     # Cross validation
@@ -118,10 +123,14 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         if scoring == "root_mean_squared_error":
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds,
                                                       scoring="mean_squared_error")
+            output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(
+                abs(scores.mean()) ** 0.5, scores.std() ** 0.5)
             print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()) ** 0.5,
                                                                              scores.std() ** 0.5, name, scoring))
         else:
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
+            output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(abs(scores.mean()),
+                                                                                               scores.std())
             print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()), scores.std(), name,
                                                                              scoring))
 
@@ -294,6 +303,9 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         for i, val in enumerate(grid_search_params):
             if val is not None:
                 print_grid_search(algs[i], alg_names[i], val)
+
+    # Return output
+    return output_set
 
 
 def ensemble(algs, alg_names, ensemble_name=None, in_ensemble=None, weights=None, voting="soft"):
