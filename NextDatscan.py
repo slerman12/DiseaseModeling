@@ -106,7 +106,7 @@ def generate_features(data, predictors, target, id_name, score_name, visit_name)
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
 
-    # Build new data (generate NP3BRADY_NEXT, VISIT_NEXT, and TIME_PASSED)
+    # Build new data (generate SCORE_NEXT, VISIT_NEXT, and TIME_PASSED)
     for index, row in data.iterrows():
         # If now visit isn't the max
         if row["VISIT_NOW"] < max_visit:

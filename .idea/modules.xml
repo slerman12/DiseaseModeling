@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/Web_Server_Running_Random_Forest.iml" filepath="$PROJECT_DIR$/Web_Server_Running_Random_Forest.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Web_Machine_Learning.iml" filepath="$PROJECT_DIR$/Web_Machine_Learning.iml" />
     </modules>
   </component>
 </project>
