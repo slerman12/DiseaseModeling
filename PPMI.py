@@ -40,7 +40,7 @@ def main():
     # Merge with patient info
     pd_control_data = pd_control_data.merge(all_patients, on="PATNO", how="left")
 
-    # TODO: Figure out what do with SC
+    # TODO: Merge patient's SC features onto baseline if times are close
     # Only include baseline and subsequent visits
     pd_control_data = pd_control_data[
         (pd_control_data["EVENT_ID"] != "ST") & (
@@ -84,7 +84,7 @@ def main():
 
     # Generate features (and update all features list)
     train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
-                              action=True)
+                              action=True, updrs_subsets=True, time=True, future=True, milestones=False, slopes=False)
 
     # Data diagnostics after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
@@ -97,7 +97,7 @@ def main():
                        "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
                        "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "TIME_FUTURE", "TIME_NOW",
                        "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y",
-                       "MONTHS_SINCE_DIAGNOSIS", "MONTHS_SINCE_FIRST_SYMPTOM", "TOTAL"]
+                       "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM", "TIME_FROM_BL", "TOTAL"]
 
     # List of UPDRS components
     updrs_components = ["NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", "NP1APAT", "NP1DDS", "NP1SLPN", "NP1SLPD", "NP1PAIN",
@@ -110,7 +110,7 @@ def main():
                         "NP3RTALL", "NP3RTALJ", "NP3RTCON"]
 
     # Drop UPDRS components
-    # drop_predictors.extend(updrs_components)
+    drop_predictors.extend(updrs_components)
 
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
@@ -165,29 +165,39 @@ def main():
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                feature_importances=[True], base_score=[True], oob_score=[True],
-               cross_val=[True], scoring="r2", split_accuracy=[True],
+               cross_val=[True], scoring="root_mean_squared_error", split_accuracy=[True],
                grid_search_params=None)
 
 
-def generate_features(data, features=None, file="generated_features.csv", action=True):
+def generate_features(data, features=None, file="generated_features.csv", action=True, updrs_subsets=True, time=True,
+                      future=True, milestones=False, slopes=False):
     # Initialize features if None
     if features is None:
         # Empty list
         features = []
 
+    # Initialize generated features and time name
+    generated_features = []
+    time_name = "EVENT_ID"
+
     # Generate features or use pre-generated features
     if action:
         # Generate UPDRS subset sums
-        generated_features = generate_updrs_subsets(data=data, features=features)
+        if updrs_subsets:
+            generated_features = generate_updrs_subsets(data=data, features=features)
 
         # Generate months
-        generated_features = generate_months(data=generated_features, features=features, id_name="PATNO",
-                                             time_name="EVENT_ID", datetime_name="INFODT", birthday_name="BIRTHDT.x",
-                                             diagnosis_date_name="PDDXDT", first_symptom_date_name="SXDT")
+        if time:
+            generated_features = generate_time(data=generated_features, features=features, id_name="PATNO",
+                                               time_name="EVENT_ID", datetime_name="INFODT",
+                                               birthday_name="BIRTHDT.x",
+                                               diagnosis_date_name="PDDXDT", first_symptom_date_name="SXDT")
+            time_name = "TIME_FROM_BL"
 
         # Generate new data set for predicting future visits
-        generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
-                                             score_name="TOTAL", time_name="MONTHS_FROM_BL")
+        if future:
+            generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
+                                                 score_name="TOTAL", time_name=time_name)
 
         # Condition(s) for generating milestone
         def milestone_debilitating_tremor(milestone_data):
@@ -198,12 +208,16 @@ def generate_features(data, features=None, file="generated_features.csv", action
                 milestone_data["NP3RIGLU"] >= 2) | (milestone_data["NP3RIGLL"] >= 2)
 
         # Generate new data set for predicting future milestones
-        # generated_features = generate_milestones(data=generated_features, features=features, id_name="PATNO",
-        #                                          time_name="MONTHS_FROM_BL", condition=milestone_debilitating_tremor)
+        if milestones:
+            generated_features = generate_milestones(data=generated_features, features=features,
+                                                     id_name="PATNO",
+                                                     time_name=time_name,
+                                                     condition=milestone_debilitating_tremor)
 
         # Generate new data set for predicting future visits
-        # generated_features = generate_slopes(data=generated_features, features=features, id_name="PATNO",
-        #                                      score_name="TOTAL", time_name="MONTHS_FROM_BL")
+        if slopes:
+            generated_features = generate_slopes(data=generated_features, features=features, id_name="PATNO",
+                                                 score_name="TOTAL", time_name=time_name)
 
         # Save generated features data
         generated_features.to_csv(file, index=False)
@@ -390,16 +404,16 @@ def generate_updrs_subsets(data, features):
     return data
 
 
-def generate_months(data, features, id_name, time_name, datetime_name, birthday_name, diagnosis_date_name,
-                    first_symptom_date_name):
+def generate_time(data, features, id_name, time_name, datetime_name, birthday_name, diagnosis_date_name,
+                  first_symptom_date_name):
     # Set features
-    features.extend(["MONTHS_FROM_BL", "MONTHS_AGE", "MONTHS_SINCE_DIAGNOSIS", "MONTHS_SINCE_FIRST_SYMPTOM"])
+    features.extend(["TIME_FROM_BL", "AGE", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM"])
 
     # Initialize columns
-    data["MONTHS_FROM_BL"] = -1
-    data["MONTHS_AGE"] = -1
-    data["MONTHS_SINCE_DIAGNOSIS"] = -1
-    data["MONTHS_SINCE_FIRST_SYMPTOM"] = -1
+    data["TIME_FROM_BL"] = -1
+    data["AGE"] = -1
+    data["TIME_SINCE_DIAGNOSIS"] = -1
+    data["TIME_SINCE_FIRST_SYMPTOM"] = -1
 
     # Convert dates to date times
     data[datetime_name] = pd.to_datetime(data[datetime_name]).interpolate()
@@ -411,66 +425,18 @@ def generate_months(data, features, id_name, time_name, datetime_name, birthday_
     for data_id in data[id_name].unique():
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
-        data.loc[data[id_name] == data_id, "MONTHS_FROM_BL"] = (now_date - baseline_date).apply(
+        data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
             lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
     # Set age, months from diagnosis, and months from first symptom
-    data["MONTHS_AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    # data.loc[data["DIAGNOSIS"] == 1, "MONTHS_SINCE_DIAGNOSIS"] = (
+    data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
+    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
     #     data[datetime_name] - data[diagnosis_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    # data.loc[data["DIAGNOSIS"] == 1, "MONTHS_SINCE_FIRST_SYMPTOM"] = (
+    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
     #     data[datetime_name] - data[first_symptom_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
 
     # Return data
     return data
-
-    # # Create new dataframe
-    # new_data = pd.DataFrame(columns=features)
-    #
-    # # Initialize progress measures
-    # progress_complete = 0
-    # progress_total = len(data)
-    #
-    # # Iterate through rows and build new data
-    # for index, row in data.iterrows():
-    #     # Update progress
-    #     progress_complete += 1
-    #     sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
-    #     sys.stdout.flush()
-    #
-    #     # Set ID
-    #     data_id = row[id_name]
-    #
-    #     # Convert dates to date times
-    #     data[datetime_name] = pd.to_datetime(data[datetime_name])
-    #     data[birthday_name] = pd.to_datetime(data[birthday_name])
-    #     data[datetime_name] = pd.to_datetime(data[datetime_name])
-    #
-    #     # Set features
-    #     row["MONTHS_FROM_BL"] = (
-    #         row[datetime_name] - data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name]).apply(
-    #         lambda x: x / np.timedelta64(1, 'M'))
-    #     row["MONTHS_AGE"] = (row[datetime_name] - row[birthday_name]).apply(lambda x: x / np.timedelta64(1, 'M'))
-    #     if row["DIAGNOSIS"] == 1:
-    #         row["MONTHS_SINCE_DIAGNOSIS"] = (row[datetime_name] - row[diagnosis_date_name]).apply(
-    #             lambda x: x / np.timedelta64(1, 'M'))
-    #         row["MONTHS_SINCE_FIRST_SYMPTOM"] = (row[datetime_name] - row[first_symptom_date_name]).apply(
-    #             lambda x: x / np.timedelta64(1, 'M'))
-    #     else:
-    #         row["MONTHS_SINCE_DIAGNOSIS"] = -1
-    #         row["MONTHS_SINCE_FIRST_SYMPTOM"] = -1
-    #
-    #     # Add row to new_data
-    #     if not math.isnan(new_data.index.max()):
-    #         new_data.loc[new_data.index.max() + 1] = row[features]
-    #     else:
-    #         new_data.loc[0] = row[features]
-    #
-    # # Print new line
-    # print()
-    #
-    # # Return new data
-    # return new_data
 
 
 if __name__ == "__main__":
