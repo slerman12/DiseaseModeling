@@ -9,11 +9,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
-
 import MachineLearning as mL
 
 
-def main():
+def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_time, gen_future, gen_milestones,
+        gen_milestone_features_values, gen_slopes, drop_predictors):
     # Set seed
     np.random.seed(0)
 
@@ -21,7 +21,6 @@ def main():
     all_patients = pd.read_csv("data/all_pats.csv")
     all_visits = pd.read_csv("data/all_visits.csv")
     all_updrs = pd.read_csv("data/all_updrs.csv")
-    all_updrs_subcomponents = pd.read_csv("data/itemizedDistributionOfUPDRSMeaning_Use.csv")
 
     # Enrolled PD / Control patients
     pd_control_patients = all_patients.loc[
@@ -41,58 +40,47 @@ def main():
     # Merge with patient info
     pd_control_data = pd_control_data.merge(all_patients, on="PATNO", how="left")
 
-    # TODO: Merge patient's SC features onto baseline if times are close
-    # Only include baseline and subsequent visits
-    pd_control_data = pd_control_data[
-        (pd_control_data["EVENT_ID"] != "ST") & (
-            pd_control_data["EVENT_ID"] != "U01") & (pd_control_data["EVENT_ID"] != "PW") & (
-            pd_control_data["EVENT_ID"] != "SC")]
+    # Merge SC data onto BL data
+    pd_control_data[pd_control_data["EVENT_ID"] == "BL"] = \
+        pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(pd_control_data[pd_control_data["EVENT_ID"] == "SC"],
+                                                                   on="PATNO", how="left", suffixes=["", "_SC_ID"])
+
+    # Remove SC data that already belongs to BL
+    pd_control_data = pd_control_data.drop([col for col in pd_control_data.columns if col[-6:] == "_SC_ID"])
 
     # Encode to numeric
-    mL.clean_data(data=pd_control_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED"], encode_man={
+    mL.clean_data(data=pd_control_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED", "PAG_UPDRS3"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
                      "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
-
-    # TODO: Optimize flexibility with NAs
-    # Eliminate features with more than 20% NAs
-    for feature in pd_control_data.keys():
-        if len(pd_control_data.loc[pd_control_data[feature].isnull(), feature]) / len(
-                pd_control_data[feature]) > 0.2:
-            pd_control_data = pd_control_data.drop(feature, 1)
-
-    # TODO: Rethink this
-    # Eliminate features with more than 30% NA at Baseline
-    for feature in pd_control_data.keys():
-        if len(pd_control_data.loc[
-                           (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
-            pd_control_data = pd_control_data.drop(feature, 1)
-
-    # TODO: Imputation
-    # Drop rows with NAs
-    pd_control_data = pd_control_data.dropna()
-
-    # Drop duplicates (keep first, delete others)
-    pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"])
 
     # Drop patients without BL data
     for patient in pd_control_data["PATNO"].unique():
         if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"].unique():
             pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
 
+    # Eliminate features with more than 30% NA at Baseline
+    for feature in pd_control_data.keys():
+        if len(pd_control_data.loc[
+                           (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
+                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+            pd_control_data = pd_control_data.drop(feature, 1)
+
+    # TODO: Imputation
+    # Drop patients with NA(s) at baseline
+    pd_control_data = pd_control_data[pd_control_data["PATNO"] != pd_control_data.loc[
+        (pd_control_data["EVENT_ID"] == 0) & pd_control_data.isnull().values.any(), "PATNO"]]
+
+    # Drop rows with NA at score feature
+    pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
+
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
 
-    # Score name, milestone feature, and milestone_value
-    score_name = "TOTAL"
-    milestone_feature = "NP2TRMR"
-    milestone_value = 0
-
     # Generate features (and update all features list)
-    train = generate_features(data=pd_control_data, features=all_data_features, file="data/PPMI_train.csv",
-                              action=True, updrs_subsets=True, time=True, future=False, milestones=True,
-                              slopes=False, score_name=score_name, milestone_feature=milestone_feature,
-                              milestone_value=milestone_value)
+    train = generate_features(data=pd_control_data, features=all_data_features, filename=gen_filename,
+                              action=gen_action, updrs_subsets=gen_updrs_subsets,
+                              time=gen_time, future=gen_future, milestones=gen_milestones, slopes=gen_slopes,
+                              score_name=score_name, milestone_features_values=gen_milestone_features_values)
 
     # Data diagnostics after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
@@ -100,45 +88,10 @@ def main():
     # Initialize predictors as all features
     predictors = list(train.columns.values)
 
-    # Initialize which features to drop from predictors
-    drop_predictors = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PAG_UPDRS3",
-                       "PRIMDIAG",
-                       "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
-                       "ENROLL_CAT",
-                       "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "TIME_FUTURE",
-                       "TIME_NOW",
-                       "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE",
-                       "BIRTHDT.y",
-                       "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM", "TIME_FROM_BL"]
-
-    # List of UPDRS components
-    updrs_components = ["NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", "NP1APAT", "NP1DDS", "NP1SLPN",
-                        "NP1SLPD",
-                        "NP1PAIN",
-                        "NP1URIN", "NP1CNST", "NP1LTHD", "NP1FATG", "NP2SPCH", "NP2SALV", "NP2SWAL",
-                        "NP2EAT",
-                        "NP2DRES", "NP2HYGN", "NP2HWRT", "NP2HOBB", "NP2TURN", "NP2TRMR", "NP2RISE",
-                        "NP2WALK",
-                        "NP2FREZ", "PAG_UPDRS3", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU", "NP3RIGLU",
-                        "PN3RIGRL",
-                        "NP3RIGLL", "NP3FTAPR", "NP3FTAPL", "NP3HMOVR", "NP3HMOVL", "NP3PRSPR", "NP3PRSPL",
-                        "NP3TTAPR",
-                        "NP3TTAPL", "NP3LGAGR", "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL",
-                        "NP3POSTR",
-                        "NP3BRADY", "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU", "NP3RTALU",
-                        "NP3RTARL",
-                        "NP3RTALL", "NP3RTALJ", "NP3RTCON"]
-
-    # Drop UPDRS components
-    # drop_predictors.extend(updrs_components)
-
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
         if feature in predictors:
             predictors.remove(feature)
-
-    # Target for the model
-    target = "TIME_UNTIL_MILESTONE"
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
@@ -198,12 +151,13 @@ def main():
     print(metrics["Cross Validation root_mean_squared_error"])
 
 
-def generate_features(data, features=None, file="generated_features.csv", action=True, updrs_subsets=True, time=True,
-                      future=True, milestones=False, slopes=False, score_name="TOTAL",
-                      milestone_feature="", milestone_value=0):
-    # Initialize features if None
+def generate_features(data, features=None, filename="generated_features.csv", action=True, updrs_subsets=True,
+                      time=True, future=True, milestones=False, slopes=False, score_name="TOTAL",
+                      milestone_features_values=None):
+    # Initialize if None
+    if milestone_features_values is None:
+        milestone_features_values = []
     if features is None:
-        # Empty list
         features = []
 
     # Initialize generated features and time name
@@ -219,8 +173,7 @@ def generate_features(data, features=None, file="generated_features.csv", action
         # Generate months
         if time:
             generated_features = generate_time(data=generated_features, features=features, id_name="PATNO",
-                                               time_name="EVENT_ID", datetime_name="INFODT",
-                                               birthday_name="BIRTHDT.x",
+                                               time_name="EVENT_ID", datetime_name="INFODT", birthday_name="BIRTHDT.x",
                                                diagnosis_date_name="PDDXDT", first_symptom_date_name="SXDT")
             time_name = "TIME_FROM_BL"
 
@@ -229,16 +182,9 @@ def generate_features(data, features=None, file="generated_features.csv", action
             generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
                                                  score_name=score_name, time_name=time_name)
 
-        # Condition(s) for generating milestone
-        def milestone_debilitating_tremor(milestone_data):
-            return milestone_data["NP2TRMR"] >= 2
-
-        def milestone_rigidity(milestone_data):
-            return (milestone_data["NP3RIGN"] >= 2) | (milestone_data["NP3RIGRU"] >= 2) | (
-                milestone_data["NP3RIGLU"] >= 2) | (milestone_data["NP3RIGLL"] >= 2)
-
         def milestone_condition(milestone_data):
-            return milestone_data[milestone_feature] > milestone_value
+            condition = [milestone_data[pair[0]] > pair[1] for pair in milestone_features_values]
+            return np.bitwise_or.reduce(np.array(condition))
 
         # Generate new data set for predicting future milestones
         if milestones:
@@ -253,10 +199,10 @@ def generate_features(data, features=None, file="generated_features.csv", action
                                                  score_name=score_name, time_name=time_name)
 
         # Save generated features data
-        generated_features.to_csv(file, index=False)
+        generated_features.to_csv(filename, index=False)
     else:
         # Retrieve generated features data
-        generated_features = pd.read_csv(file)
+        generated_features = pd.read_csv(filename)
 
     # Return generated features
     return generated_features
@@ -352,7 +298,7 @@ def generate_milestones(data, features, id_name, time_name, condition):
         if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
             # Time of milestone
             time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
-                data)), time_name].min()
+                    data)), time_name].min()
 
             # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
@@ -433,6 +379,44 @@ def generate_slopes(data, features, id_name, time_name, score_name):
     return new_data
 
 
+def generate_time(data, features, id_name, time_name, datetime_name, birthday_name, diagnosis_date_name,
+                  first_symptom_date_name):
+    # Set features
+    new_features = ["TIME_FROM_BL", "AGE", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM"]
+    for feature in new_features:
+        if feature not in features:
+            features.append(feature)
+
+    # Initialize columns
+    data["TIME_FROM_BL"] = -1
+    data["AGE"] = -1
+    data["TIME_SINCE_DIAGNOSIS"] = -1
+    data["TIME_SINCE_FIRST_SYMPTOM"] = -1
+
+    # Convert dates to date times
+    data[datetime_name] = pd.to_datetime(data[datetime_name])
+    data[birthday_name] = pd.to_datetime(data[birthday_name])
+    # data[diagnosis_date_name] = pd.to_datetime(data[diagnosis_date_name])
+    # data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
+
+    # Set months from baseline
+    for data_id in data[id_name].unique():
+        now_date = data.loc[data[id_name] == data_id, datetime_name]
+        baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
+        data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
+                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+
+    # Set age, months from diagnosis, and months from first symptom
+    data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
+    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
+    #     data[datetime_name] - data[diagnosis_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
+    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
+    #     data[datetime_name] - data[first_symptom_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
+
+    # Return data
+    return data
+
+
 def generate_updrs_subsets(data, features):
     # set features
     new_features = ["NP1", "NP2", "NP3"]
@@ -449,43 +433,24 @@ def generate_updrs_subsets(data, features):
     return data
 
 
-def generate_time(data, features, id_name, time_name, datetime_name, birthday_name, diagnosis_date_name,
-                  first_symptom_date_name):
-    # Set features
-    new_features = ["TIME_FROM_BL", "AGE", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM"]
-    for feature in new_features:
-        if feature not in features:
-            features.append(feature)
-
-    # Initialize columns
-    data["TIME_FROM_BL"] = -1
-    data["AGE"] = -1
-    data["TIME_SINCE_DIAGNOSIS"] = -1
-    data["TIME_SINCE_FIRST_SYMPTOM"] = -1
-
-    # Convert dates to date times
-    data[datetime_name] = pd.to_datetime(data[datetime_name]).interpolate()
-    data[birthday_name] = pd.to_datetime(data[birthday_name])
-    # data[diagnosis_date_name] = pd.to_datetime(data[diagnosis_date_name]).interpolate()
-    # data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name]).interpolate()
-
-    # Set months from baseline
-    for data_id in data[id_name].unique():
-        now_date = data.loc[data[id_name] == data_id, datetime_name]
-        baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
-        data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-            lambda x: int((x / np.timedelta64(1, 'D')) / 30))
-
-    # Set age, months from diagnosis, and months from first symptom
-    data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
-    #     data[datetime_name] - data[diagnosis_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
-    #     data[datetime_name] - data[first_symptom_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-
-    # Return data
-    return data
-
-
 if __name__ == "__main__":
-    main()
+    # List of UPDRS items
+    updrs_items = pd.read_csv("data/itemizedDistributionOfUPDRSMeaning_Use.csv")["colname"].tolist()
+
+    # Configure and run model
+    run(target="TIME_UNTIL_MILESTONE",
+        score_name="TOTAL",
+        gen_filename="data/PPMI_train.csv",
+        gen_action=True,
+        gen_updrs_subsets=True,
+        gen_time=True,
+        gen_future=False,
+        gen_milestones=True,
+        gen_milestone_features_values=[("NP2TRMR", 0)],
+        gen_slopes=False,
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO",
+                         "TIME_FUTURE", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
+                         "TIME_FROM_BL"])
