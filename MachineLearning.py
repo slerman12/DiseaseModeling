@@ -60,6 +60,7 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
     # Automatically encode features to numeric
     if encode_auto is not None:
         for feature in encode_auto:
+            data.loc[pd.isnull(data[feature]), feature] = "NaN"
             data[feature] = preprocessing.LabelEncoder().fit_transform(data[feature])
 
     # Manually encode features to numeric

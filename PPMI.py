@@ -34,19 +34,23 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     pd_control_data = pd_control_data.merge(all_updrs[["PATNO", "EVENT_ID", "TOTAL"]], on=["PATNO", "EVENT_ID"],
                                             how="left")
 
-    # Get rid of nulls for UPDRS
-    pd_control_data = pd_control_data[pd_control_data["TOTAL"].notnull()]
-
     # Merge with patient info
     pd_control_data = pd_control_data.merge(all_patients, on="PATNO", how="left")
 
+    # TODO: Ask about this
+    # Drop duplicates based on PATNO and EVENT_ID, keep only last
+    pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="last")
+
     # Merge SC data onto BL data
-    pd_control_data[pd_control_data["EVENT_ID"] == "BL"] = \
-        pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(pd_control_data[pd_control_data["EVENT_ID"] == "SC"],
-                                                                   on="PATNO", how="left", suffixes=["", "_SC_ID"])
+    sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
+        pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
 
     # Remove SC data that already belongs to BL
-    pd_control_data = pd_control_data.drop([col for col in pd_control_data.columns if col[-6:] == "_SC_ID"])
+    pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
+        [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
+
+    # Remove SC rows
+    pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
 
     # Encode to numeric
     mL.clean_data(data=pd_control_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED", "PAG_UPDRS3"], encode_man={
@@ -67,11 +71,24 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
 
     # TODO: Imputation
     # Drop patients with NA(s) at baseline
-    pd_control_data = pd_control_data[pd_control_data["PATNO"] != pd_control_data.loc[
-        (pd_control_data["EVENT_ID"] == 0) & pd_control_data.isnull().values.any(), "PATNO"]]
+    pd_control_data = pd_control_data[~pd_control_data["PATNO"].isin(pd_control_data.loc[
+        (pd_control_data["EVENT_ID"] == 0) & pd_control_data.isnull().any(), "PATNO"])]
 
     # Drop rows with NA at score feature
     pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
+
+    # TODO: Ask about this
+    # Drop rows with no INFODT (only one row, I believe, patient 3818)
+    pd_control_data = pd_control_data[pd_control_data["INFODT"].notnull()]
+
+    # TODO: FIGURE OUT WHY THIS WORKED AND THE PREVIOUS DIDN'T
+    # Drop patients without BL data
+    for patient in pd_control_data["PATNO"].unique():
+        if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"].unique():
+            pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
+
+    # TODO: Delete this
+    pd_control_data.to_csv("test_delete.csv")
 
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
@@ -298,7 +315,7 @@ def generate_milestones(data, features, id_name, time_name, condition):
         if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
             # Time of milestone
             time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
-                    data)), time_name].min()
+                data)), time_name].min()
 
             # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
@@ -400,11 +417,12 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     # data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
 
     # Set months from baseline
+    # TODO: PATIENT 4070 has ST instead of BL or no BL
     for data_id in data[id_name].unique():
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+            lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
     # Set age, months from diagnosis, and months from first symptom
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
