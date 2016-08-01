@@ -37,7 +37,26 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # Merge with patient info
     pd_control_data = pd_control_data.merge(all_patients, on="PATNO", how="left")
 
-    # TODO: Ask about this
+    # Only include "off" data
+    pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
+
+    # # Merge data from rescreens
+    # for patient in pd_control_data["PATNO"]:
+    #     # Second to last SC infodt
+    #     second_to_last = pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC"), ]
+    #
+    #     # Merge second to last SC onto last SC
+    #     sc_sc_merge = pd_control_data[pd_control_data["EVENT_ID"] == "SC"].merge(
+    #             pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
+    #
+    #     # Remove SC data that already belongs to BL
+    #     pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
+    #             [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
+    #
+    #     # Remove SC rows
+    #     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
+
+    # TODO: Remove
     # Drop duplicates based on PATNO and EVENT_ID, keep only last
     pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="last")
 
@@ -51,6 +70,9 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
+
+    # # Drop duplicates based on PATNO and EVENT_ID, keep only first
+    # pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
 
     # Encode to numeric
     mL.clean_data(data=pd_control_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED", "PAG_UPDRS3"], encode_man={
@@ -77,17 +99,16 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # Drop rows with NA at score feature
     pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
 
-    # TODO: Ask about this
+    # TODO: Interpolate based on EVENT_ID
     # Drop rows with no INFODT (only one row, I believe, patient 3818)
     pd_control_data = pd_control_data[pd_control_data["INFODT"].notnull()]
 
-    # TODO: FIGURE OUT WHY THIS WORKED AND THE PREVIOUS DIDN'T
     # Drop patients without BL data
     for patient in pd_control_data["PATNO"].unique():
         if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"].unique():
             pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
 
-    # TODO: Delete this
+    # TODO: Remove
     pd_control_data.to_csv("test_delete.csv")
 
     # Select all features in the data set
@@ -102,8 +123,12 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # Data diagnostics after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
 
-    # Initialize predictors as all features
-    predictors = list(train.columns.values)
+    # Initialize predictors as all numeric features
+    numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+    predictors = list(pd_control_data.select_dtypes(include=numerics).columns.values)
+
+    # TODO: Remove
+    print(predictors)
 
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
@@ -417,7 +442,6 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     # data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
 
     # Set months from baseline
-    # TODO: PATIENT 4070 has ST instead of BL or no BL
     for data_id in data[id_name].unique():
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
@@ -468,7 +492,7 @@ if __name__ == "__main__":
         gen_slopes=False,
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE",
                          "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
-                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3"
                          "TIME_FUTURE", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
                          "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
                          "TIME_FROM_BL"])
