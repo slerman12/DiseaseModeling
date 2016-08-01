@@ -13,7 +13,7 @@ import MachineLearning as mL
 
 
 def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_time, gen_future, gen_milestones,
-        gen_milestone_features_values, gen_slopes, drop_predictors):
+        gen_milestone_features_values, gen_slopes, grid_search, drop_predictors):
     # Set seed
     np.random.seed(0)
 
@@ -188,8 +188,8 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
 
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                         feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
-                         scoring="r2")
+               feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
+               scoring="r2", grid_search_params=grid_search_params if grid_search else None)
 
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
@@ -197,7 +197,7 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
 
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                         cross_val=[True], scoring="root_mean_squared_error", description=None)
+               cross_val=[True], scoring="root_mean_squared_error", description=None)
 
 
 def generate_features(data, features=None, filename="generated_features.csv", action=True, updrs_subsets=True,
@@ -295,8 +295,10 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
     # Print new line
     print()
 
-    # Return new data
-    return new_data
+    # TODO: Ask if necessary. Score goes down a bit without future baseline.
+    # TODO: Try predicting specific future rather than just any future
+    # Return new data without future baseline
+    return new_data[new_data["TIME_FUTURE"] != 0]
 
 
 def generate_milestones(data, features, id_name, time_name, condition):
@@ -480,6 +482,7 @@ if __name__ == "__main__":
         gen_milestones=False,
         gen_milestone_features_values=[("NP2TRMR", 0)],
         gen_slopes=False,
+        grid_search=False,
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG", "COMPLT",
                          "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
                          "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3",
