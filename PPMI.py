@@ -62,11 +62,11 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
 
     # Merge SC data onto BL data
     sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
-        pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
+            pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
 
     # Remove SC data that already belongs to BL
     pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
-        [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
+            [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
@@ -94,7 +94,8 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # TODO: Imputation
     # Drop patients with NA(s) at baseline
     pd_control_data = pd_control_data[~pd_control_data["PATNO"].isin(pd_control_data.loc[
-        (pd_control_data["EVENT_ID"] == 0) & pd_control_data.isnull().any(), "PATNO"])]
+                                                                         (pd_control_data[
+                                                                              "EVENT_ID"] == 0) & pd_control_data.isnull().any(), "PATNO"])]
 
     # Drop rows with NA at score feature
     pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
@@ -222,7 +223,7 @@ def generate_features(data, features=None, filename="generated_features.csv", ac
         # Generate new data set for predicting future visits
         if future:
             generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
-                                                 score_name=score_name, time_name=time_name)
+                                                 score_name=score_name, time_name=time_name, time_key_name="EVENT_ID")
 
         def milestone_condition(milestone_data):
             condition = [milestone_data[pair[0]] > pair[1] for pair in milestone_features_values]
@@ -250,7 +251,7 @@ def generate_features(data, features=None, filename="generated_features.csv", ac
     return generated_features
 
 
-def generate_future(data, features, id_name, score_name, time_name):
+def generate_future(data, features, id_name, score_name, time_name, time_key_name):
     # Set features
     new_features = ["SCORE_NOW", "TIME_NOW", "TIME_FUTURE", "TIME_PASSED", "SCORE_FUTURE"]
     for feature in new_features:
@@ -258,7 +259,7 @@ def generate_future(data, features, id_name, score_name, time_name):
             features.append(feature)
 
     # Set max time
-    max_time = data[time_name].max()
+    max_time = data[time_key_name].max()
 
     # Generate SCORE_NOW and TIME_NOW
     data["SCORE_NOW"] = data[score_name]
@@ -284,17 +285,18 @@ def generate_future(data, features, id_name, score_name, time_name):
             # For the range of all times after this one
             for i in range(1, max_time + 1):
                 # If any future time belongs to the same patient
-                if any((data["TIME_NOW"] == row["TIME_NOW"] + i) & (data[id_name] == row[id_name])):
+                if any((data[time_key_name] == row[time_key_name] + i) & (data[id_name] == row[id_name])):
                     # Set next score
-                    row["SCORE_FUTURE"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
+                    row["SCORE_FUTURE"] = data.loc[(data[time_key_name] == row[time_key_name] + i) &
                                                    (data[id_name] == row[id_name]), "SCORE_NOW"].item()
 
                     # Set next time
-                    row["TIME_FUTURE"] = data.loc[(data["TIME_NOW"] == row["TIME_NOW"] + i) &
+                    row["TIME_FUTURE"] = data.loc[(data[time_key_name] == row[time_key_name] + i) &
                                                   (data[id_name] == row[id_name]), "TIME_NOW"].item()
 
                     # Set time passed
-                    row["TIME_PASSED"] = i
+                    row["TIME_PASSED"] = data.loc[
+                        (data[time_key_name] == i) & (data[id_name] == row[id_name]), "TIME_NOW"].item()
 
                     # Add row to new_data
                     if not math.isnan(new_data.index.max()):
@@ -340,7 +342,7 @@ def generate_milestones(data, features, id_name, time_name, condition):
         if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
             # Time of milestone
             time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
-                data)), time_name].min()
+                    data)), time_name].min()
 
             # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
@@ -446,7 +448,7 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-            lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
     # Set age, months from diagnosis, and months from first symptom
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
@@ -493,6 +495,7 @@ if __name__ == "__main__":
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE",
                          "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
                          "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3"
-                         "TIME_FUTURE", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                                                                                                            "TIME_FUTURE",
+                         "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
                          "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
                          "TIME_FROM_BL"])
