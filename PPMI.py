@@ -79,22 +79,25 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
                      "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
 
-    # Drop patients without BL data
-    for patient in pd_control_data["PATNO"].unique():
-        if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"].unique():
-            pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
-
     # Eliminate features with more than 30% NA at Baseline
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[
                            (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
+    # TODO: Remove
+    pd_control_data[pd_control_data["EVENT_ID"] == 0].to_csv("test1.csv")
+    print("Length of data before dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
+
     # TODO: Imputation
-    # Drop patients with NA(s) at baseline
-    pd_control_data = pd_control_data[~pd_control_data["PATNO"].isin(pd_control_data.loc[
-        (pd_control_data["EVENT_ID"] == 0) & pd_control_data.isnull().any(), "PATNO"])]
+    # Drop baselines with NAs
+    pd_control_data = pd_control_data[pd_control_data["PATNO"].isin(
+        pd_control_data.loc[(pd_control_data["EVENT_ID"] == 0) & (pd_control_data.notnull().all(axis=1)), "PATNO"])]
+
+    # TODO: Remove
+    pd_control_data[pd_control_data["EVENT_ID"] == 0].to_csv("test2.csv")
+    print("Length of data after dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
 
     # Drop rows with NA at score feature
     pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
@@ -102,6 +105,10 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # TODO: Interpolate based on EVENT_ID
     # Drop rows with no INFODT (only one row, I believe, patient 3818)
     pd_control_data = pd_control_data[pd_control_data["INFODT"].notnull()]
+
+    # If gen_future, remove rows with no score
+    if gen_future:
+        pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
 
     # Drop patients without BL data
     for patient in pd_control_data["PATNO"].unique():
@@ -127,13 +134,13 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
     predictors = list(pd_control_data.select_dtypes(include=numerics).columns.values)
 
-    # TODO: Remove
-    print(predictors)
-
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
         if feature in predictors:
             predictors.remove(feature)
+
+    # TODO: Remove
+    train[predictors].to_csv("data/PPMI_train.csv")
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
@@ -482,17 +489,18 @@ if __name__ == "__main__":
     # Configure and run model
     run(target="TIME_UNTIL_MILESTONE",
         score_name="TOTAL",
-        gen_filename="data/PPMI_train.csv",
+        gen_filename="data/PPMI_all_features.csv",
         gen_action=True,
         gen_updrs_subsets=True,
         gen_time=True,
-        gen_future=False,
-        gen_milestones=True,
+        gen_future=True,
+        gen_milestones=False,
         gen_milestone_features_values=[("NP2TRMR", 0)],
         gen_slopes=False,
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE",
                          "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
                          "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3"
-                         "TIME_FUTURE", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                                                                                                            "TIME_FUTURE",
+                         "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
                          "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
                          "TIME_FROM_BL"])
