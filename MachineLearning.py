@@ -103,7 +103,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     # Feature importances
     def print_feature_importances(alg, name):
         print("Feature Importances [" + name + "]")
-        for feature, imp in zip(predictors, alg.feature_importances_):
+        for feature, imp in sorted(zip(predictors, alg.feature_importances_), key=lambda x: x[1]):
             print(feature, imp)
 
     # Base score estimate

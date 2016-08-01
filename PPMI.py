@@ -62,11 +62,11 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
 
     # Merge SC data onto BL data
     sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
-            pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
+        pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
 
     # Remove SC data that already belongs to BL
     pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
-            [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
+        [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
@@ -264,51 +264,33 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
         if feature not in features:
             features.append(feature)
 
-    # Set max time
-    max_time = data[time_key_name].max()
-
-    # Generate SCORE_NOW and TIME_NOW
-    data["SCORE_NOW"] = data[score_name]
-    data["TIME_NOW"] = data[time_name]
-
-    # Create new dataframe
+    # Initialize new data frame
     new_data = pd.DataFrame(columns=features)
 
     # Initialize progress measures
     progress_complete = 0
-    progress_total = len(data)
+    progress_total = len(data[id_name].unique())
 
-    # Iterate through rows and build new data (generate SCORE_FUTURE, TIME_FUTURE, and TIME_PASSED)
-    for index, row in data.iterrows():
+    for group_id in data[id_name].unique():
         # Update progress
         progress_complete += 1
         sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
         sys.stdout.flush()
 
-        # Check time value(s)
-        if row["TIME_NOW"] == 0:
-            # TODO: Consider predicting a specific future time instead of any future time
-            # For the range of all times after this one
-            for i in range(1, max_time + 1):
-                # If any future time belongs to the same patient
-                if any((data[time_key_name] == row[time_key_name] + i) & (data[id_name] == row[id_name])):
-                    # Set next score
-                    row["SCORE_FUTURE"] = data.loc[(data[time_key_name] == row[time_key_name] + i) &
-                                                   (data[id_name] == row[id_name]), "SCORE_NOW"].item()
+        # Group's key, times, and scores
+        key_time_score = data[data[id_name] == group_id][[id_name, time_key_name, time_name, score_name]]
+        key_time_score.rename(columns={time_name: "TIME_FUTURE", score_name: "SCORE_FUTURE"}, inplace=True)
 
-                    # Set next time
-                    row["TIME_FUTURE"] = data.loc[(data[time_key_name] == row[time_key_name] + i) &
-                                                  (data[id_name] == row[id_name]), "TIME_NOW"].item()
+        # Add group's baseline information
+        group_data = key_time_score.merge(data[(data[id_name] == group_id) & (data[time_name] == 0)], on=[id_name],
+                                          how="left")
+        group_data[["SCORE_NOW", "TIME_NOW"]] = group_data[[score_name, time_name]]
 
-                    # Set time passed
-                    row["TIME_PASSED"] = data.loc[
-                        (data[time_key_name] == i) & (data[id_name] == row[id_name]), "TIME_NOW"].item()
+        # Calculate time passed
+        group_data["TIME_PASSED"] = group_data["TIME_FUTURE"] - group_data["TIME_NOW"]
 
-                    # Add row to new_data
-                    if not math.isnan(new_data.index.max()):
-                        new_data.loc[new_data.index.max() + 1] = row[features]
-                    else:
-                        new_data.loc[0] = row[features]
+        # Append group data to new data
+        new_data = new_data.append(group_data, ignore_index=True)
 
     # Print new line
     print()
@@ -348,7 +330,7 @@ def generate_milestones(data, features, id_name, time_name, condition):
         if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
             # Time of milestone
             time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
-                    data)), time_name].min()
+                data)), time_name].min()
 
             # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
@@ -454,7 +436,7 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+            lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
     # Set age, months from diagnosis, and months from first symptom
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
@@ -488,7 +470,7 @@ if __name__ == "__main__":
     updrs_items = pd.read_csv("data/itemizedDistributionOfUPDRSMeaning_Use.csv")["colname"].tolist()
 
     # Configure and run model
-    run(target="TIME_UNTIL_MILESTONE",
+    run(target="SCORE_FUTURE",
         score_name="TOTAL",
         gen_filename="data/PPMI_all_features.csv",
         gen_action=True,
