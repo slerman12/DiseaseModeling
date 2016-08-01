@@ -56,7 +56,7 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     #     # Remove SC rows
     #     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
 
-    # TODO: Remove
+    # TODO: Remove after merging rescreens
     # Drop duplicates based on PATNO and EVENT_ID, keep only last
     pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="last")
 
@@ -187,17 +187,17 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
                            "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
 
     # Display ensemble metrics
-    metrics = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+    mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                          feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
                          scoring="r2")
 
-    print(metrics["Cross Validation r2"])
+    # Display ensemble metrics
+    mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+               cross_val=[True], scoring="mean_absolute_error", description=None)
 
     # Display ensemble metrics
-    metrics = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+    mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                          cross_val=[True], scoring="root_mean_squared_error", description=None)
-
-    print(metrics["Cross Validation root_mean_squared_error"])
 
 
 def generate_features(data, features=None, filename="generated_features.csv", action=True, updrs_subsets=True,
@@ -473,17 +473,16 @@ if __name__ == "__main__":
     run(target="SCORE_FUTURE",
         score_name="TOTAL",
         gen_filename="data/PPMI_all_features.csv",
-        gen_action=True,
+        gen_action=False,
         gen_updrs_subsets=True,
         gen_time=True,
         gen_future=True,
         gen_milestones=False,
         gen_milestone_features_values=[("NP2TRMR", 0)],
         gen_slopes=False,
-        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE",
-                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
-                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3"
-                                                                                                            "TIME_FUTURE",
-                         "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG", "COMPLT",
+                         "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
+                         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3",
+                         "TIME_FUTURE", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
                          "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
-                         "TIME_FROM_BL"])
+                         "TIME_FROM_BL"] + updrs_items)
