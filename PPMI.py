@@ -132,7 +132,9 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
 
     # Initialize predictors as all numeric features
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
-    predictors = list(pd_control_data.select_dtypes(include=numerics).columns.values)
+    predictors = list(train.select_dtypes(include=numerics).columns.values)
+
+    print(drop_predictors)
 
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
@@ -149,6 +151,7 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # Grid search (futures): n_estimators=50, min_samples_split=75, min_samples_leaf=50
     # Futures: n_estimators=150, min_samples_split=100, min_samples_leaf=25
     # Grid search (slopes): 'min_samples_split': 75, 'n_estimators': 50, 'min_samples_leaf': 25
+    # Newest Futures: 'min_samples_leaf': 100, 'min_samples_split': 25, 'n_estimators': 50
     algs = [
         RandomForestRegressor(n_estimators=150, min_samples_split=100, min_samples_leaf=25, oob_score=True),
         LogisticRegression(),
@@ -284,7 +287,8 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
         # Add group's baseline information
         group_data = key_time_score.merge(data[(data[id_name] == group_id) & (data[time_name] == 0)], on=[id_name],
                                           how="left")
-        group_data[["SCORE_NOW", "TIME_NOW"]] = group_data[[score_name, time_name]]
+        group_data["SCORE_NOW"] = group_data[score_name]
+        group_data["TIME_NOW"] = group_data[time_name]
 
         # Calculate time passed
         group_data["TIME_PASSED"] = group_data["TIME_FUTURE"] - group_data["TIME_NOW"]
@@ -485,7 +489,7 @@ if __name__ == "__main__":
         grid_search=False,
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG", "COMPLT",
                          "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
-                         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3",
-                         "TIME_FUTURE", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW",
+                         "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_FUTURE",
                          "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
-                         "TIME_FROM_BL"] + updrs_items)
+                         "TIME_FROM_BL", "TOTAL"] + updrs_items)
