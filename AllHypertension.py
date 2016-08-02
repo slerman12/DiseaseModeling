@@ -45,7 +45,7 @@ def main():
         first_sit_date_time_local = row_observations.loc[
             row_observations["state"] == "sit", "date_time_local"].min()
         first_sit_date_time_central = row_observations.loc[
-            row_observations["state"] == "sit", "timeOfDay_central"].min()
+            row_observations["state"] == "sit", "date_time"].min()
 
         # If first sit exists
         if first_sit_date_time_local is not None and pd.notnull(first_sit_date_time_local):
@@ -62,7 +62,7 @@ def main():
             if not equal_time_stand.empty:
                 # Choose stand
                 next_stand_date_time_local = equal_time_stand["date_time_local"].min()
-                next_stand_date_time_central = equal_time_stand["timeOfDay_central"].min()
+                next_stand_date_time_central = equal_time_stand["date_time"].min()
                 prev_sit_date_time_local = first_sit_date_time_local
                 prev_sit_date_time_central = first_sit_date_time_central
 
@@ -87,7 +87,7 @@ def main():
                     (row_observations["date_time_local"] > first_sit_date_time_local), "date_time_local"].min()
                 next_stand_date_time_central = row_observations.loc[
                     (row_observations["state"] == "stand") &
-                    (row_observations["timeOfDay_central"] > first_sit_date_time_central), "timeOfDay_central"].min()
+                    (row_observations["date_time"] > first_sit_date_time_central), "date_time"].min()
 
                 # If next stand exists
                 if next_stand_date_time_local is not None and pd.notnull(next_stand_date_time_local):
@@ -104,7 +104,7 @@ def main():
                     prev_sit_date_time_central = row_observations.loc[
                         (row_observations["state"] == "sit") &
                         (row_observations[
-                             "timeOfDay_central"] < next_stand_date_time_central), "timeOfDay_central"].max()
+                             "date_time"] < next_stand_date_time_central), "date_time"].max()
 
                     # Fill sit data
                     row["DATE_TIME_LOCAL_SIT"] = prev_sit_date_time_local
@@ -148,7 +148,7 @@ def main():
             first_stand_date_time_local = row_observations.loc[
                 row_observations["state"] == "stand", "date_time_local"].min()
             first_stand_date_time_central = row_observations.loc[
-                row_observations["state"] == "stand", "timeOfDay_central"].min()
+                row_observations["state"] == "stand", "date_time"].min()
 
             if first_sit_date_time_local is not None and pd.notnull(first_sit_date_time_local):
                 # Fill first stand data
@@ -396,4 +396,5 @@ def stats():
 
 
 if __name__ == "__main__":
-    stats()
+    main()
+    time_frame_compliance()
