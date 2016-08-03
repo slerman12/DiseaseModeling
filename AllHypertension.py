@@ -394,7 +394,18 @@ def stats():
     (timeframe_compliances["SC_TO_BL_TIME_DIFF_COMPLIANCE"] * 100).plot(kind="hist", facecolor="pink")
     plt.show()
 
+    # Plot histograms
+    plt.xlabel("BL to V01 Time Diff Compliance (%)")
+    plt.ylabel("Number of Patients")
+    (timeframe_compliances["BL_TO_V01_TIME_DIFF_COMPLIANCE"] * 100).plot(kind="hist", facecolor="pink")
+    plt.show()
+
+    # Plot histograms
+    plt.xlabel("V01 to V02 Time Diff Compliance (%)")
+    plt.ylabel("Number of Patients")
+    (timeframe_compliances["V01_TO_V02_TIME_DIFF_COMPLIANCE"] * 100).plot(kind="hist", facecolor="pink")
+    plt.show()
+
 
 if __name__ == "__main__":
-    main()
-    time_frame_compliance()
+    stats()
