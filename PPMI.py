@@ -40,64 +40,66 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # Only include "off" data
     pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
 
-    # # Merge data from rescreens
-    # for patient in pd_control_data["PATNO"]:
-    #     # Second to last SC infodt
-    #     second_to_last = pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC"), ]
-    #
-    #     # Merge second to last SC onto last SC
-    #     sc_sc_merge = pd_control_data[pd_control_data["EVENT_ID"] == "SC"].merge(
-    #             pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
-    #
-    #     # Remove SC data that already belongs to BL
-    #     pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
-    #             [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
-    #
-    #     # Remove SC rows
-    #     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
+    # Merge data from rescreens per patient
+    for patient in pd_control_data.PATNO.unique():
+        # Sort SC data by date time
+        sc_data = pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")]
+        sc_data["INFODT"] = pd.to_datetime(sc_data["INFODT"])
+        sc_data = sc_data.sort("INFODT")
 
-    # TODO: Remove after merging rescreens
-    # Drop duplicates based on PATNO and EVENT_ID, keep only last
-    pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="last")
+        # Initialize merged data as first SC
+        sc_merge = sc_data.head(1)
+
+        # Drop first SC from sc_data
+        sc_data = sc_data.drop(sc_data.index[0])
+
+        # Iterate through rows and merge
+        for index, row in sc_data.iterrows():
+            sc_merge = rmerge(sc_merge, row, how="left", on=["PATNO", "EVENT_ID"])
+
+        # Drop SCs from patient and add new merged SC
+        pd_control_data[pd_control_data["PATNO"] == patient] = pd_control_data[
+            (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] != "SC")].append(sc_merge)
 
     # Merge SC data onto BL data
     sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
-        pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
+            pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
 
     # Remove SC data that already belongs to BL
     pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
-        [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
+            [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
 
-    # # Drop duplicates based on PATNO and EVENT_ID, keep only first
-    # pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
+    # Drop duplicates based on PATNO and EVENT_ID, keep only first
+    pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
 
     # Encode to numeric
     mL.clean_data(data=pd_control_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED", "PAG_UPDRS3"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
                      "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
 
+    # Convert categorical data to binary columns
+    numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+    dummy_features = [item for item in pd_control_data.columns.values if item not in list(
+            pd_control_data.select_dtypes(include=numerics).columns.values) + drop_predictors]
+    pd_control_data = pd.get_dummies(pd_control_data, columns=dummy_features)
+
     # Eliminate features with more than 30% NA at Baseline
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[
                            (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
-    # TODO: Remove
-    pd_control_data[pd_control_data["EVENT_ID"] == 0].to_csv("test1.csv")
-    print("Length of data before dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
+    # Print length of BL data before dropping rows
+    print("Length of BL data before dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
 
     # TODO: Imputation
     # Drop baselines with NAs
     pd_control_data = pd_control_data[pd_control_data["PATNO"].isin(
-        pd_control_data.loc[(pd_control_data["EVENT_ID"] == 0) & (pd_control_data.notnull().all(axis=1)), "PATNO"])]
-
-    # TODO: Remove
-    pd_control_data[pd_control_data["EVENT_ID"] == 0].to_csv("test2.csv")
-    print("Length of data after dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
+            pd_control_data.loc[(pd_control_data["EVENT_ID"] == 0) & (pd_control_data.notnull().all(axis=1)), "PATNO"])]
 
     # Drop rows with NA at score feature
     pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
@@ -110,13 +112,13 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     if gen_future:
         pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
 
+    # Print length of BL data after dropping rows
+    print("Length of BL data after dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
+
     # Drop patients without BL data
     for patient in pd_control_data["PATNO"].unique():
         if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"].unique():
             pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
-
-    # TODO: Remove
-    pd_control_data.to_csv("test_delete.csv")
 
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
@@ -134,14 +136,12 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
     predictors = list(train.select_dtypes(include=numerics).columns.values)
 
-    print(drop_predictors)
-
     # Drop unwanted features from predictors list
     for feature in drop_predictors:
         if feature in predictors:
             predictors.remove(feature)
 
-    # TODO: Remove
+    # Create file of training data
     train[predictors].to_csv("data/PPMI_train.csv")
 
     # Univariate feature selection
@@ -299,7 +299,6 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
     # Print new line
     print()
 
-    # TODO: Ask if necessary. Score goes down a bit without future baseline.
     # TODO: Try predicting specific future rather than just any future
     # Return new data without future baseline
     return new_data[new_data["TIME_FUTURE"] != 0]
@@ -336,7 +335,7 @@ def generate_milestones(data, features, id_name, time_name, condition):
         if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
             # Time of milestone
             time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
-                data)), time_name].min()
+                    data)), time_name].min()
 
             # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
@@ -442,7 +441,7 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-            lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
     # Set age, months from diagnosis, and months from first symptom
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
@@ -469,6 +468,38 @@ def generate_updrs_subsets(data, features):
 
     # Return new data
     return data
+
+
+# Function for merge and replace from https://gist.github.com/mlgill/11334821
+def rmerge(left, right, **kwargs):
+    # Function to flatten lists from http://rosettacode.org/wiki/Flatten_a_list#Python
+    def flatten(lst):
+        return sum(([x] if not isinstance(x, list) else flatten(x) for x in lst), [])
+
+    # Set default for removing overlapping columns in "left" to be true
+    myargs = {'replace': 'left'}
+    myargs.update(kwargs)
+
+    # Remove the replace key from the argument dict to be sent to
+    # pandas merge command
+    kwargs = {k: v for k, v in myargs.iteritems() if k is not 'replace'}
+
+    if myargs['replace'] is not None:
+        # Generate a list of overlapping column names not associated with the join
+        skipcols = set(flatten([v for k, v in myargs.iteritems() if k in ['on', 'left_on', 'right_on']]))
+        leftcols = set(left.columns)
+        rightcols = set(right.columns)
+        dropcols = list((leftcols & rightcols).difference(skipcols))
+
+        # Remove the overlapping column names from the appropriate DataFrame
+        if myargs['replace'].lower() == 'left':
+            left = left.copy().drop(dropcols, axis=1)
+        elif myargs['replace'].lower() == 'right':
+            right = right.copy().drop(dropcols, axis=1)
+
+    df = pd.merge(left, right, **kwargs)
+
+    return df
 
 
 if __name__ == "__main__":
