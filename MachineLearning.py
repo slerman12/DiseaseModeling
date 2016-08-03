@@ -52,7 +52,7 @@ def describe_data(data, info=False, describe=False, value_counts=None, unique=No
         # Get the raw p-values for each feature, and transform from p-values into scores
         scores = -np.log10(selector.pvalues_)
         print("\nUnivariate Feature Selection:")
-        for feature, imp in zip(predictors, scores):
+        for feature, imp in sorted(zip(predictors, scores), key=lambda x: x[1]):
             print(feature, imp)
 
 

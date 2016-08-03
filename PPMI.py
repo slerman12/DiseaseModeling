@@ -35,39 +35,41 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
                                             how="left")
 
     # Merge with patient info
-    pd_control_data = pd_control_data.merge(all_patients, on="PATNO", how="left")
+    pd_control_data = pd_control_data.merge(all_patients, on="PATNO", how="left", suffixes=["_x", ""])
 
     # Only include "off" data
     pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
 
     # Merge data from rescreens per patient
-    for patient in pd_control_data.PATNO.unique():
-        # Sort SC data by date time
-        sc_data = pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")]
-        sc_data["INFODT"] = pd.to_datetime(sc_data["INFODT"])
-        sc_data = sc_data.sort("INFODT")
+    for patient in pd_control_data.loc[pd_control_data["EVENT_ID"] == "SC", "PATNO"].unique():
+        # If patient has more than one SC
+        if len(pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")]) > 1:
+            # Sort SC data by date time
+            sc_data = pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")]
+            sc_data["INFODT"] = pd.to_datetime(sc_data["INFODT"])
+            sc_data = sc_data.sort("INFODT")
 
-        # Initialize merged data as first SC
-        sc_merge = sc_data.head(1)
+            # Initialize merged data as first SC
+            sc_merge = sc_data.head(1)
 
-        # Drop first SC from sc_data
-        sc_data = sc_data.drop(sc_data.index[0])
+            # Drop first SC from sc_data
+            sc_data = sc_data.reset_index()[sc_data.index[0] != 0]
 
-        # Iterate through rows and merge
-        for index, row in sc_data.iterrows():
-            sc_merge = rmerge(sc_merge, row, how="left", on=["PATNO", "EVENT_ID"])
+            # Iterate through rows and merge
+            for index, row in sc_data.iterrows():
+                sc_merge = rmerge(sc_merge, row, how="left", on=["PATNO", "EVENT_ID"])
 
-        # Drop SCs from patient and add new merged SC
-        pd_control_data[pd_control_data["PATNO"] == patient] = pd_control_data[
-            (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] != "SC")].append(sc_merge)
+            # Drop SCs from patient and add new merged SC
+            pd_control_data[pd_control_data["PATNO"] == patient] = pd_control_data[
+                (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] != "SC")].append(sc_merge)
 
     # Merge SC data onto BL data
     sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
-            pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
+        pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
 
     # Remove SC data that already belongs to BL
     pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
-            [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
+        [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
@@ -76,21 +78,25 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
 
     # Encode to numeric
-    mL.clean_data(data=pd_control_data, encode_auto=["GENDER.x", "DIAGNOSIS", "HANDED", "PAG_UPDRS3"], encode_man={
+    mL.clean_data(data=pd_control_data, encode_auto=["DIAGNOSIS", "HANDED", "PAG_UPDRS3", "GENDER.x"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
                      "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
 
     # Convert categorical data to binary columns
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
     dummy_features = [item for item in pd_control_data.columns.values if item not in list(
-            pd_control_data.select_dtypes(include=numerics).columns.values) + drop_predictors]
+        pd_control_data.select_dtypes(include=numerics).columns.values) + drop_predictors]
     pd_control_data = pd.get_dummies(pd_control_data, columns=dummy_features)
+
+    # Controls have missing PDDXDT and SXDT
+    pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "PDDXDT"] = -1
+    pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "SXDT"] = -1
 
     # Eliminate features with more than 30% NA at Baseline
     for feature in pd_control_data.keys():
         if len(pd_control_data.loc[
                            (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-                pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
+            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
             pd_control_data = pd_control_data.drop(feature, 1)
 
     # Print length of BL data before dropping rows
@@ -99,7 +105,7 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # TODO: Imputation
     # Drop baselines with NAs
     pd_control_data = pd_control_data[pd_control_data["PATNO"].isin(
-            pd_control_data.loc[(pd_control_data["EVENT_ID"] == 0) & (pd_control_data.notnull().all(axis=1)), "PATNO"])]
+        pd_control_data.loc[(pd_control_data["EVENT_ID"] == 0) & (pd_control_data.notnull().all(axis=1)), "PATNO"])]
 
     # Drop rows with NA at score feature
     pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
@@ -335,7 +341,7 @@ def generate_milestones(data, features, id_name, time_name, condition):
         if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
             # Time of milestone
             time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
-                    data)), time_name].min()
+                data)), time_name].min()
 
             # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
@@ -433,15 +439,17 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     # Convert dates to date times
     data[datetime_name] = pd.to_datetime(data[datetime_name])
     data[birthday_name] = pd.to_datetime(data[birthday_name])
-    # data[diagnosis_date_name] = pd.to_datetime(data[diagnosis_date_name])
-    # data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
+    # data.loc[data["DIAGNOSIS"] == 1, diagnosis_date_name] = pd.to_datetime(
+    #     data.loc[data["DIAGNOSIS"] == 1, diagnosis_date_name], format="%m/%Y")
+    # data.loc[data["DIAGNOSIS"] == 1, first_symptom_date_name] = pd.to_datetime(
+    #     data.loc[data["DIAGNOSIS"] == 1, first_symptom_date_name], format="%m/%Y")
 
     # Set months from baseline
     for data_id in data[id_name].unique():
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+            lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
     # Set age, months from diagnosis, and months from first symptom
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
@@ -510,7 +518,7 @@ if __name__ == "__main__":
     run(target="SCORE_FUTURE",
         score_name="TOTAL",
         gen_filename="data/PPMI_all_features.csv",
-        gen_action=False,
+        gen_action=True,
         gen_updrs_subsets=True,
         gen_time=True,
         gen_future=True,
@@ -520,7 +528,8 @@ if __name__ == "__main__":
         grid_search=False,
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG", "COMPLT",
                          "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
-                         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.y", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW",
+                         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW",
                          "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_FUTURE",
                          "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
-                         "TIME_FROM_BL", "TOTAL"] + updrs_items)
+                         "TIME_FROM_BL", "TOTAL", "WDDT", "WDRSN", "SXDT", "PDDXDT", "SXDT_x",
+                         "PDDXDT_x"] + updrs_items)
