@@ -92,49 +92,49 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
     pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
 
-    # Eliminate features with more than n NA at Baseline
-    def feature_elimination(n):
+    # Automatic feature/row selection
+    def feature_row_elimination(n, progress=False):
+        # Make a copy of the data
         data = pd_control_data.copy()
+
+        # Eliminate features with more than n NA at BL
         for column in data.keys():
-            if len(data.loc[
-                               (data["EVENT_ID"] == 0) & (data[column].isnull()), column]) / len(
+            if len(data.loc[(data["EVENT_ID"] == 0) & (data[column].isnull()), column]) / len(
                     data[data["EVENT_ID"] == 0]) > n:
                 data = data.drop(column, 1)
-        sys.stdout.write("\rFeature Elimination Progress: {:.2%}".format(n))
-        sys.stdout.flush()
-        return len(pd_control_data[pd_control_data["EVENT_ID"] == 0]) * len(pd_control_data.keys())
 
-    # determine optimal feature elimination
-    feature_elimination_n = max([x / 1000 for x in range(0, 1000, 25)], key=lambda n: feature_elimination(n))
-    print("\nFeature Elimination N: {}".format(feature_elimination_n))
-    feature_elimination(feature_elimination_n)
+        # TODO: Imputation
+        # Drop patients with NAs
+        data = data[data["PATNO"].isin(
+            data.loc[(data["EVENT_ID"] == 0) & (data.notnull().all(axis=1)), "PATNO"])]
 
-    # Print length of BL data before dropping rows
-    print("Length of BL data before dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
+        # Drop patients without BL data
+        for patno in data["PATNO"].unique():
+            if patno not in data.loc[data["EVENT_ID"] == 0, "PATNO"].unique():
+                data = data[data["PATNO"] != patno]
 
-    # TODO: Imputation
-    # Drop baselines with NAs
-    pd_control_data = pd_control_data[pd_control_data["PATNO"].isin(
-        pd_control_data.loc[(pd_control_data["EVENT_ID"] == 0) & (pd_control_data.notnull().all(axis=1)), "PATNO"])]
+        # Print progress
+        if progress:
+            sys.stdout.write("\rFeature Elimination Progress: {:.2%}".format(n + .025))
+            sys.stdout.flush()
 
-    # Drop rows with NA at score feature
-    pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
+        # Return number of features * patients
+        return len(data[data["EVENT_ID"] == 0]) * len(data.keys())
 
-    # TODO: Interpolate based on EVENT_ID
-    # Drop rows with no INFODT (only one row, I believe, patient 3818)
-    pd_control_data = pd_control_data[pd_control_data["INFODT"].notnull()]
+    # Print number patients and features before feature elimination
+    print("BEFORE FEATURE ELIMINATION: Patients: {}, Features: {}".format(
+        len(pd_control_data[pd_control_data["EVENT_ID"] == 0]),
+        len(pd_control_data.keys())))
 
-    # If gen_future, remove rows with no score
-    if gen_future:
-        pd_control_data = pd_control_data[pd_control_data[score_name].notnull()]
+    # Perform optimal feature elimination
+    feature_elimination_n = max([x / 1000 for x in range(25, 1000, 25)], key=lambda n: feature_row_elimination(n, True))
+    print("\rFeature Elimination N: {}".format(feature_elimination_n))
+    feature_row_elimination(feature_elimination_n)
 
-    # Print length of BL data after dropping rows
-    print("Length of BL data after dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
-
-    # Drop patients without BL data
-    for patient in pd_control_data["PATNO"].unique():
-        if patient not in pd_control_data.loc[pd_control_data["EVENT_ID"] == 0, "PATNO"].unique():
-            pd_control_data = pd_control_data[pd_control_data["PATNO"] != patient]
+    # Print number patients and features after feature elimination
+    print("AFTER FEATURE ELIMINATION: Patients: {}, Features: {}".format(
+        len(pd_control_data[pd_control_data["EVENT_ID"] == 0]),
+        len(pd_control_data.keys())))
 
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
@@ -290,6 +290,9 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
     progress_complete = 0
     progress_total = len(data[id_name].unique())
 
+    # Remove rows without score
+    data = data[data[score_name].notnull()]
+
     for group_id in data[id_name].unique():
         # Update progress
         progress_complete += 1
@@ -438,6 +441,10 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     for feature in new_features:
         if feature not in features:
             features.append(feature)
+
+    # TODO: Interpolate based on time
+    # Drop rows with no date time
+    data = data[data[datetime_name].notnull()]
 
     # Initialize columns
     data["TIME_FROM_BL"] = -1
