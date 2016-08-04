@@ -78,7 +78,7 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
 
     # Encode to numeric
-    mL.clean_data(data=pd_control_data, encode_auto=["DIAGNOSIS", "HANDED", "PAG_UPDRS3", "GENDER.x"], encode_man={
+    mL.clean_data(data=pd_control_data, encode_auto=["DIAGNOSIS", "HANDED", "PAG_UPDRS3"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
                      "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
 
@@ -89,15 +89,25 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     pd_control_data = pd.get_dummies(pd_control_data, columns=dummy_features)
 
     # Controls have missing PDDXDT and SXDT
-    pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "PDDXDT"] = -1
-    pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "SXDT"] = -1
+    pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
+    pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
 
-    # Eliminate features with more than 30% NA at Baseline
-    for feature in pd_control_data.keys():
-        if len(pd_control_data.loc[
-                           (pd_control_data["EVENT_ID"] == 0) & (pd_control_data[feature].isnull()), feature]) / len(
-            pd_control_data[pd_control_data["EVENT_ID"] == 0]) > 0.3:
-            pd_control_data = pd_control_data.drop(feature, 1)
+    # Eliminate features with more than n NA at Baseline
+    def feature_elimination(n):
+        data = pd_control_data.copy()
+        for column in data.keys():
+            if len(data.loc[
+                               (data["EVENT_ID"] == 0) & (data[column].isnull()), column]) / len(
+                    data[data["EVENT_ID"] == 0]) > n:
+                data = data.drop(column, 1)
+        sys.stdout.write("\rFeature Elimination Progress: {:.2%}".format(n))
+        sys.stdout.flush()
+        return len(pd_control_data[pd_control_data["EVENT_ID"] == 0]) * len(pd_control_data.keys())
+
+    # determine optimal feature elimination
+    feature_elimination_n = max([x / 1000 for x in range(0, 1000, 25)], key=lambda n: feature_elimination(n))
+    print("\nFeature Elimination N: {}".format(feature_elimination_n))
+    feature_elimination(feature_elimination_n)
 
     # Print length of BL data before dropping rows
     print("Length of BL data before dropping rows: {}".format(len(pd_control_data[pd_control_data["EVENT_ID"] == 0])))
@@ -305,9 +315,8 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
     # Print new line
     print()
 
-    # TODO: Try predicting specific future rather than just any future
     # Return new data without future baseline
-    return new_data[new_data["TIME_FUTURE"] != 0]
+    return new_data[(new_data["TIME_FUTURE"] >= 0) & (new_data["TIME_FUTURE"] < 25)]
 
 
 def generate_milestones(data, features, id_name, time_name, condition):
@@ -439,10 +448,9 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     # Convert dates to date times
     data[datetime_name] = pd.to_datetime(data[datetime_name])
     data[birthday_name] = pd.to_datetime(data[birthday_name])
-    # data.loc[data["DIAGNOSIS"] == 1, diagnosis_date_name] = pd.to_datetime(
-    #     data.loc[data["DIAGNOSIS"] == 1, diagnosis_date_name], format="%m/%Y")
-    # data.loc[data["DIAGNOSIS"] == 1, first_symptom_date_name] = pd.to_datetime(
-    #     data.loc[data["DIAGNOSIS"] == 1, first_symptom_date_name], format="%m/%Y")
+    data[datetime_name] = pd.to_datetime(data[datetime_name])
+    data[diagnosis_date_name] = pd.to_datetime(data[diagnosis_date_name])
+    data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
 
     # Set months from baseline
     for data_id in data[id_name].unique():
@@ -453,10 +461,12 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
 
     # Set age, months from diagnosis, and months from first symptom
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
-    #     data[datetime_name] - data[diagnosis_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    # data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
-    #     data[datetime_name] - data[first_symptom_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
+    data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
+        data.loc[data["DIAGNOSIS"] == 1, datetime_name] - data.loc[data["DIAGNOSIS"] == 1, diagnosis_date_name]).apply(
+        lambda x: (x / np.timedelta64(1, 'D')) / 30)
+    data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
+        data.loc[data["DIAGNOSIS"] == 1, datetime_name] - data.loc[
+            data["DIAGNOSIS"] == 1, first_symptom_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
 
     # Return data
     return data
@@ -529,7 +539,6 @@ if __name__ == "__main__":
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG", "COMPLT",
                          "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
                          "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW",
-                         "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_FUTURE",
-                         "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_SINCE_DIAGNOSIS", "TIME_SINCE_FIRST_SYMPTOM",
-                         "TIME_FROM_BL", "TOTAL", "WDDT", "WDRSN", "SXDT", "PDDXDT", "SXDT_x",
-                         "PDDXDT_x"] + updrs_items)
+                         "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE",
+                         "BIRTHDT.y", "TIME_FROM_BL", "TOTAL", "WDDT", "WDRSN", "SXDT", "PDDXDT", "SXDT_x",
+                         "PDDXDT_x", "TIME_SINCE_DIAGNOSIS"] + updrs_items)
