@@ -12,8 +12,8 @@ from sklearn.svm import SVC
 import MachineLearning as mL
 
 
-def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_time, gen_future, gen_milestones,
-        gen_milestone_features_values, gen_slopes, grid_search, drop_predictors):
+def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen_updrs_subsets, gen_time, gen_future,
+        gen_milestones, gen_milestone_features_values, gen_slopes, grid_search, drop_predictors):
     # Set seed
     np.random.seed(0)
 
@@ -92,44 +92,19 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
     pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
 
-    # Automatic feature/row selection
-    def feature_row_elimination(n, progress=False):
-        # Make a copy of the data
-        data = pd_control_data.copy()
-
-        # Eliminate features with more than n NA at BL
-        for column in data.keys():
-            if len(data.loc[(data["EVENT_ID"] == 0) & (data[column].isnull()), column]) / len(
-                    data[data["EVENT_ID"] == 0]) > n:
-                data = data.drop(column, 1)
-
-        # TODO: Imputation
-        # Drop patients with NAs
-        data = data[data["PATNO"].isin(
-            data.loc[(data["EVENT_ID"] == 0) & (data.notnull().all(axis=1)), "PATNO"])]
-
-        # Drop patients without BL data
-        for patno in data["PATNO"].unique():
-            if patno not in data.loc[data["EVENT_ID"] == 0, "PATNO"].unique():
-                data = data[data["PATNO"] != patno]
-
-        # Print progress
-        if progress:
-            sys.stdout.write("\rFeature Elimination Progress: {:.2%}".format(n + .025))
-            sys.stdout.flush()
-
-        # Return number of features * patients
-        return len(data[data["EVENT_ID"] == 0]) * len(data.keys())
-
     # Print number patients and features before feature elimination
     print("BEFORE FEATURE ELIMINATION: Patients: {}, Features: {}".format(
         len(pd_control_data[pd_control_data["EVENT_ID"] == 0]),
         len(pd_control_data.keys())))
 
     # Perform optimal feature elimination
-    feature_elimination_n = max([x / 1000 for x in range(25, 1000, 25)], key=lambda n: feature_row_elimination(n, True))
-    print("\rFeature Elimination N: {}".format(feature_elimination_n))
-    feature_row_elimination(feature_elimination_n)
+    if feature_elimination_n is None:
+        feature_elimination_n = max([x / 1000 for x in range(25, 1000, 25)],
+                                    key=lambda n: feature_row_elimination(pd_control_data, n, True, True))
+        print("\rFeature Elimination N: {}\n".format(feature_elimination_n))
+
+    # Feature/row elimination
+    pd_control_data = feature_row_elimination(pd_control_data, feature_elimination_n)
 
     # Print number patients and features after feature elimination
     print("AFTER FEATURE ELIMINATION: Patients: {}, Features: {}".format(
@@ -217,6 +192,40 @@ def run(target, score_name, gen_filename, gen_action, gen_updrs_subsets, gen_tim
     # Display ensemble metrics
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                cross_val=[True], scoring="root_mean_squared_error", description=None)
+
+
+# Automatic feature/row selection
+def feature_row_elimination(data, n, test=False, progress=False):
+    # Make a copy of the data
+    data = data.copy()
+
+    # Eliminate features with more than n NA at BL
+    for column in data.keys():
+        if len(data.loc[(data["EVENT_ID"] == 0) & (data[column].isnull()), column]) / len(
+                data[data["EVENT_ID"] == 0]) > n:
+            data = data.drop(column, 1)
+
+    # TODO: Imputation
+    # Drop patients with NAs
+    data = data[data["PATNO"].isin(
+        data.loc[(data["EVENT_ID"] == 0) & (data.notnull().all(axis=1)), "PATNO"])]
+
+    # Drop patients without BL data
+    for patno in data["PATNO"].unique():
+        if patno not in data.loc[data["EVENT_ID"] == 0, "PATNO"].unique():
+            data = data[data["PATNO"] != patno]
+
+    # Print progress
+    if progress:
+        sys.stdout.write("\rFeature Elimination Progress: {:.2%}".format(n + .025))
+        sys.stdout.flush()
+
+    if test:
+        # Return number of features * patients
+        return len(data[data["EVENT_ID"] == 0]) * len(data.keys())
+    else:
+        # Return data
+        return data
 
 
 def generate_features(data, features=None, filename="generated_features.csv", action=True, updrs_subsets=True,
@@ -534,8 +543,9 @@ if __name__ == "__main__":
     # Configure and run model
     run(target="SCORE_FUTURE",
         score_name="TOTAL",
+        feature_elimination_n=.025,
         gen_filename="data/PPMI_all_features.csv",
-        gen_action=True,
+        gen_action=False,
         gen_updrs_subsets=True,
         gen_time=True,
         gen_future=True,
