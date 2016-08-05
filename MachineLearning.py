@@ -96,27 +96,35 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
 
 def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
             cross_val=None, folds=5, scoring="accuracy", split_accuracy=None, split_classification_report=None,
-            split_confusion_matrix=None, plot=True, grid_search_params=None, description="METRICS:"):
+            split_confusion_matrix=None, plot=True, grid_search_params=None, output=False, description="METRICS:"):
     # Output list
     output_set = {}
 
     # Feature importances
     def print_feature_importances(alg, name):
-        print("Feature Importances [" + name + "]")
-        for feature, imp in sorted(zip(predictors, alg.feature_importances_), key=lambda x: x[1]):
-            print(feature, imp)
+        alg.fit(data[predictors], data[target])
+        if output:
+            output_set["Feature Importances"] = zip(predictors, alg.feature_importances_)
+        else:
+            print("Feature Importances [" + name + "]")
+            for feature, imp in sorted(zip(predictors, alg.feature_importances_), key=lambda x: x[1]):
+                print(feature, imp)
 
     # Base score estimate
     def print_base_score(alg, name):
         score = alg.score(data[predictors], data[target])
-        output_set["Base Score"] = score
-        print("Base Score: {} [{}]".format(score, name))
+        if output:
+            output_set["Base Score"] = score
+        else:
+            print("Base Score: {} [{}]".format(score, name))
 
     # Out of bag estimate
     def print_oob_score(alg, name):
         score = alg.oob_score_
-        output_set["OOB Score"] = score
-        print("OOB Score: {} [{}]".format(score, name))
+        if output:
+            output_set["OOB Score"] = score
+        else:
+            print("OOB Score: {} [{}]".format(score, name))
 
     # Cross validation
     def print_cross_val(alg, name):
@@ -124,16 +132,20 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         if scoring == "root_mean_squared_error":
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds,
                                                       scoring="mean_squared_error")
-            output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(
-                abs(scores.mean()) ** 0.5, scores.std() ** 0.5)
-            print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()) ** 0.5,
-                                                                             scores.std() ** 0.5, name, scoring))
+            if output:
+                output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(
+                    abs(scores.mean()) ** 0.5, scores.std() ** 0.5)
+            else:
+                print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()) ** 0.5,
+                                                                                 scores.std() ** 0.5, name, scoring))
         else:
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
-            output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(abs(scores.mean()),
-                                                                                               scores.std())
-            print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()), scores.std(), name,
-                                                                             scoring))
+            if output:
+                output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(abs(scores.mean()),
+                                                                                                   scores.std())
+            else:
+                print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()), scores.std(), name,
+                                                                                 scoring))
 
     # Split accuracy
     def print_split_accuracy(alg, name, split_name, X_train, X_test, y_train, y_test):
@@ -252,22 +264,26 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
     # Call respective methods
     if feature_importances is not None:
-        print("")
+        if not output:
+            print("")
         for i, val in enumerate(feature_importances):
             if val:
                 print_feature_importances(algs[i], alg_names[i])
     if base_score is not None:
-        print("")
+        if not output:
+            print("")
         for i, val in enumerate(base_score):
             if val:
                 print_base_score(algs[i], alg_names[i])
     if oob_score is not None:
-        print("")
+        if not output:
+            print("")
         for i, val in enumerate(oob_score):
             if val:
                 print_oob_score(algs[i], alg_names[i])
     if cross_val is not None:
-        print("")
+        if not output:
+            print("")
         for i, val in enumerate(cross_val):
             if val:
                 print_cross_val(algs[i], alg_names[i])
@@ -283,24 +299,28 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
         # Call respective methods
         if split_accuracy:
-            print("")
+            if not output:
+                print("")
             for i, val in enumerate(split_accuracy):
                 if val:
                     print_split_accuracy(algs[i], alg_names[i], split_name, X_train, X_test, y_train, y_test)
         if split_classification_report:
-            print("")
+            if not output:
+                print("")
             for i, val in enumerate(split_classification_report):
                 if val:
                     print_split_classification_report(algs[i], alg_names[i], X_train, X_test, y_train, y_test)
         if split_confusion_matrix:
-            print("")
+            if not output:
+                print("")
             for i, val in enumerate(split_confusion_matrix):
                 if val:
                     print_split_confusion_matrix(algs[i], alg_names[i], X_train, X_test, y_train, y_test, plot)
 
     # Finish calling respective methods
     if grid_search_params is not None:
-        print("")
+        if not output:
+            print("")
         for i, val in enumerate(grid_search_params):
             if val is not None:
                 print_grid_search(algs[i], alg_names[i], val)

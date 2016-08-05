@@ -123,28 +123,14 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
     # Data diagnostics after feature generation
     mL.describe_data(data=train, describe=True, description="AFTER FEATURE GENERATION:")
 
-    # Initialize predictors as all numeric features
-    numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
-    predictors = list(train.select_dtypes(include=numerics).columns.values)
-
-    # Drop unwanted features from predictors list
-    for feature in drop_predictors:
-        if feature in predictors:
-            predictors.remove(feature)
-
-    # Create file of training data
-    train[predictors].to_csv("data/PPMI_train.csv")
-
-    # Univariate feature selection
-    mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
-
     # Algs for model
     # Grid search (futures): n_estimators=50, min_samples_split=75, min_samples_leaf=50
     # Futures: n_estimators=150, min_samples_split=100, min_samples_leaf=25
     # Grid search (slopes): 'min_samples_split': 75, 'n_estimators': 50, 'min_samples_leaf': 25
-    # Newest Futures: 'min_samples_leaf': 100, 'min_samples_split': 25, 'n_estimators': 50
+    # Futures: 'min_samples_leaf': 100, 'min_samples_split': 25, 'n_estimators': 50
+    # Newest Futures: {'n_estimators': 500, 'min_samples_leaf': 2, 'min_samples_split': 4}
     algs = [
-        RandomForestRegressor(n_estimators=150, min_samples_split=100, min_samples_leaf=25, oob_score=True),
+        RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2, oob_score=True),
         LogisticRegression(),
         SVC(probability=True),
         GaussianNB(),
@@ -180,16 +166,36 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
                            "min_samples_split": [4, 8, 25, 50, 75, 100],
                            "min_samples_leaf": [2, 8, 15, 25, 50, 75, 100]}]
 
-    # Display ensemble metrics
+    # Initialize predictors as all numeric features
+    numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+    predictors = list(train.select_dtypes(include=numerics).columns.values)
+
+    # Drop unwanted features from predictors list
+    for feature in drop_predictors:
+        if feature in predictors:
+            predictors.remove(feature)
+
+    # Determine predictors (only use important features)
+    feature_importances = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                                     feature_importances=[True], output=True, description=None)["Feature Importances"]
+    predictors = [x for x, y in feature_importances if y > .001]
+
+    # Create file of training data
+    train[predictors].to_csv("data/PPMI_train.csv")
+
+    # Univariate feature selection
+    mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
+
+    # Display metrics, including r2 score
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
                scoring="r2", grid_search_params=grid_search_params if grid_search else None)
 
-    # Display ensemble metrics
+    # Display mean absolute error score
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                cross_val=[True], scoring="mean_absolute_error", description=None)
 
-    # Display ensemble metrics
+    # Display root mean squared error score
     mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                cross_val=[True], scoring="root_mean_squared_error", description=None)
 
