@@ -40,29 +40,6 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
     # Only include "off" data
     pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
 
-    # Merge data from rescreens per patient
-    for patient in pd_control_data.loc[pd_control_data["EVENT_ID"] == "SC", "PATNO"].unique():
-        # If patient has more than one SC
-        if len(pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")]) > 1:
-            # Sort SC data by date time
-            sc_data = pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")]
-            sc_data["INFODT"] = pd.to_datetime(sc_data["INFODT"])
-            sc_data = sc_data.sort("INFODT")
-
-            # Initialize merged data as first SC
-            sc_merge = sc_data.head(1)
-
-            # Drop first SC from sc_data
-            sc_data = sc_data.reset_index()[sc_data.index[0] != 0]
-
-            # Iterate through rows and merge
-            for index, row in sc_data.iterrows():
-                sc_merge = rmerge(sc_merge, row, how="left", on=["PATNO", "EVENT_ID"])
-
-            # Drop SCs from patient and add new merged SC
-            pd_control_data[pd_control_data["PATNO"] == patient] = pd_control_data[
-                (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] != "SC")].append(sc_merge)
-
     # Merge SC data onto BL data
     sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
         pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
@@ -508,38 +485,6 @@ def generate_updrs_subsets(data, features):
 
     # Return new data
     return data
-
-
-# Function for merge and replace from https://gist.github.com/mlgill/11334821
-def rmerge(left, right, **kwargs):
-    # Function to flatten lists from http://rosettacode.org/wiki/Flatten_a_list#Python
-    def flatten(lst):
-        return sum(([x] if not isinstance(x, list) else flatten(x) for x in lst), [])
-
-    # Set default for removing overlapping columns in "left" to be true
-    myargs = {'replace': 'left'}
-    myargs.update(kwargs)
-
-    # Remove the replace key from the argument dict to be sent to
-    # pandas merge command
-    kwargs = {k: v for k, v in myargs.iteritems() if k is not 'replace'}
-
-    if myargs['replace'] is not None:
-        # Generate a list of overlapping column names not associated with the join
-        skipcols = set(flatten([v for k, v in myargs.iteritems() if k in ['on', 'left_on', 'right_on']]))
-        leftcols = set(left.columns)
-        rightcols = set(right.columns)
-        dropcols = list((leftcols & rightcols).difference(skipcols))
-
-        # Remove the overlapping column names from the appropriate DataFrame
-        if myargs['replace'].lower() == 'left':
-            left = left.copy().drop(dropcols, axis=1)
-        elif myargs['replace'].lower() == 'right':
-            right = right.copy().drop(dropcols, axis=1)
-
-    df = pd.merge(left, right, **kwargs)
-
-    return df
 
 
 if __name__ == "__main__":
