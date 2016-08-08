@@ -96,25 +96,39 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
 
 def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
             cross_val=None, folds=5, scoring="accuracy", split_accuracy=None, split_classification_report=None,
-            split_confusion_matrix=None, plot=True, grid_search_params=None, output=False, description="METRICS:"):
+            split_confusion_matrix=None, plot=True, grid_search_params=None, output=False, feature_dictionary=None,
+            description="METRICS:"):
     # Output list
     output_set = {}
 
     # Feature importances
     def print_feature_importances(alg, name):
         alg.fit(data[predictors], data[target])
+        if feature_dictionary is not None:
+            fi = zip(dictionary(predictors), alg.feature_importances_)
+        else:
+            fi = zip(predictors, alg.feature_importances_)
         if output:
-            output_set["Feature Importances " + name] = zip(predictors, alg.feature_importances_)
+            output_set["Feature Importances " + name] = sorted(fi, key=lambda x: x[1])
         else:
             print("Feature Importances [" + name + "]")
-            for feature, imp in sorted(zip(predictors, alg.feature_importances_), key=lambda x: x[1]):
+            for feature, imp in sorted(fi, key=lambda x: x[1]):
                 print(feature, imp)
+
+    # Feature dictionary
+    def dictionary(features):
+        dictionary_result = []
+        for feature in features:
+            dictionary_result.extend(feature_dictionary[0].loc[
+                                         feature_dictionary[0][feature_dictionary[1]] == feature, feature_dictionary[
+                                             2]].item())
+        return dictionary_result
 
     # Base score estimate
     def print_base_score(alg, name):
         score = alg.score(data[predictors], data[target])
         if output:
-            output_set["Base Score"] = score
+            output_set["Base Score " + name] = score
         else:
             print("Base Score: {} [{}]".format(score, name))
 
@@ -236,7 +250,8 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
             grid_search_string = "Grid Search [{}]\n{}\nCross Validation: {} ({})"
             if scoring == "root_mean_squared_error":
                 output_set["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
-                                                                                     abs(grid_search.best_score_)**0.5,
+                                                                                     abs(
+                                                                                         grid_search.best_score_) ** 0.5,
                                                                                      scoring)
             else:
                 output_set["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,

@@ -14,7 +14,8 @@ import MachineLearning as mL
 
 def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen_updrs_subsets, gen_time, gen_future,
         gen_milestones, gen_milestone_features_values, gen_slopes, predictors_filename, predictors_action,
-        feature_importance_n, grid_search_action, grid_search_results, print_results, drop_predictors):
+        feature_importance_n, grid_search_action, grid_search_results, print_results, results_filename,
+        drop_predictors):
     # Set seed
     np.random.seed(0)
 
@@ -26,9 +27,12 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
         data_keys.extend([x[0] for x in gen_milestone_features_values])
 
     # Create the data frames from files
-    all_patients = pd.read_csv("data/all_pats.csv")
-    all_visits = pd.read_csv("data/all_visits.csv")
-    all_updrs = pd.read_csv("data/all_updrs.csv")
+    with np.warnings.catch_warnings():
+        np.warnings.simplefilter("ignore")
+        all_patients = pd.read_csv("data/all_pats.csv")
+        all_visits = pd.read_csv("data/all_visits.csv")
+        all_updrs = pd.read_csv("data/all_updrs.csv")
+        data_dictionary = pd.read_csv("data/visits_dd_v1.csv")
 
     # Enrolled PD / Control patients
     pd_control_patients = all_patients.loc[
@@ -78,6 +82,9 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
     pd_control_data.loc[pd_control_data["DIAGNOSIS"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
 
     if predictors_action:
+        if print_results:
+            print("Optimizing Predictors . . .")
+
         # Drop unused columns
         for column in pd_control_data.keys():
             if (column in drop_predictors) and (column not in data_keys):
@@ -198,7 +205,8 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
         # Run with new predictors
         run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen_updrs_subsets, gen_time,
             gen_future, gen_milestones, gen_milestone_features_values, gen_slopes, predictors_filename,
-            False, feature_importance_n, grid_search_action, grid_search_results, print_results, drop_predictors)
+            False, feature_importance_n, grid_search_action, grid_search_results, print_results, results_filename,
+            drop_predictors)
     else:
         # Get predictors from file
         predictors = pd.read_csv(predictors_filename)["predictors"].values.tolist()
@@ -223,7 +231,8 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
         # Display metrics, including r2 score
         metrics = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                              feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
-                             scoring="r2", output=not print_results)
+                             scoring="r2", output=not print_results, )
+        # feature_dictionary=[data_dictionary, "FEATURE", "DSCR"])
 
         # Display mean absolute error score
         metrics.update(mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
@@ -241,7 +250,23 @@ def run(target, score_name, feature_elimination_n, gen_filename, gen_action, gen
 
         if not print_results:
             # Write results to file
-            print()
+            results = pd.DataFrame(
+                columns=["milestone", "description", "base", "oob", "r2", "mas", "rmse", "features", "importances"])
+            results.loc[0, "milestone"] = gen_milestone_features_values[0][0]
+            results.loc[0, "description"] = gen_milestone_features_values[0][2]
+            results.loc[0, "base"] = metrics["Base Score Random Forest"]
+            results.loc[0, "oob"] = metrics["OOB Score Random Forest"]
+            results.loc[0, "r2"] = metrics["Cross Validation r2 Random Forest"]
+            results.loc[0, "mas"] = metrics["Cross Validation mean_absolute_error Random Forest"]
+            results.loc[0, "rmse"] = metrics["Cross Validation root_mean_squared_error Random Forest"]
+            feature_importances = list(metrics["Feature Importances Random Forest"])
+            results.loc[0, "features"] = feature_importances[0][0]
+            results.loc[0, "importances"] = feature_importances[0][1]
+            for feature, importance in feature_importances[1:]:
+                index = results.index.max() + 1
+                results.loc[index, "features"] = feature
+                results.loc[index, "importances"] = importance
+            results.to_csv(results_filename, mode="a", header=False, index=False)
 
 
 # Automatic feature/row selection
@@ -377,8 +402,19 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     data[diagnosis_date_name] = pd.to_datetime(data[diagnosis_date_name])
     data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
 
-    # Set months from baseline
+    # Initialize progress measures
+    progress_complete = 0
+    progress_total = len(data[id_name].unique())
+
+    # Set time from baseline
     for data_id in data[id_name].unique():
+        # Update progress
+        if progress:
+            progress_complete += 1
+            sys.stdout.write("\rProgress: {:.2%} [Generating Times]".format(progress_complete / progress_total))
+            sys.stdout.flush()
+
+        # Set time from BL
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
@@ -392,6 +428,10 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     data.loc[data["DIAGNOSIS"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
         data.loc[data["DIAGNOSIS"] == 1, datetime_name] - data.loc[
             data["DIAGNOSIS"] == 1, first_symptom_date_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
+
+    if progress:
+        # Print new line
+        print()
 
     # Return data
     return data
@@ -418,7 +458,7 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
         if progress:
             # Update progress
             progress_complete += 1
-            sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
+            sys.stdout.write("\rProgress: {:.2%} [Generating Futures]".format(progress_complete / progress_total))
             sys.stdout.flush()
 
         # Group's key, times, and scores
@@ -464,7 +504,7 @@ def generate_milestones(data, features, id_name, time_name, condition, progress)
         if progress:
             # Update progress
             progress_complete += 1
-            sys.stdout.write("\rProgress: {:.2%}".format(progress_complete / progress_total))
+            sys.stdout.write("\rProgress: {:.2%} [Generating Milestones]".format(progress_complete / progress_total))
             sys.stdout.flush()
 
         # Set ID
@@ -562,30 +602,99 @@ def generate_slopes(data, features, id_name, time_name, score_name, progress):
 
 
 if __name__ == "__main__":
-    # List of UPDRS items
-    updrs_items = pd.read_csv("data/itemizedDistributionOfUPDRSMeaning_Use.csv")["colname"].tolist()
+    # Print results
+    print_results = False
 
-    # Configure and run model
-    run(target="TIME_UNTIL_MILESTONE",
-        score_name="TOTAL",
-        feature_elimination_n=.025,
-        gen_filename="data/PPMI_all_features.csv",
-        gen_action=True,
-        gen_updrs_subsets=True,
-        gen_time=True,
-        gen_future=False,
-        gen_milestones=True,
-        gen_milestone_features_values=[("NP2TRMR", 0)],
-        gen_slopes=False,
-        predictors_filename="data/predictors.csv",
-        predictors_action=True,
-        feature_importance_n=.001,
-        grid_search_action=False,
-        grid_search_results=False,
-        print_results=True,
-        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG", "COMPLT",
-                         "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
-                         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW",
-                         "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE",
-                         "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN", "SXDT", "PDDXDT", "SXDT_x",
-                         "PDDXDT_x", "TIME_SINCE_DIAGNOSIS"])
+    # Milestone info
+    milestone_info = pd.read_csv("data/itemizedDistributionOfUPDRSMeaning_Use.csv")
+
+    # List of UPDRS items
+    updrs_items = milestone_info["colname"].tolist()
+
+    # Results filename
+    results_filename = "data/PPMI_Milestones_Over_0.csv"
+
+    # If not print results, output results to file
+    if not print_results:
+        pd.DataFrame(
+            columns=["milestone", "description", "base", "oob", "r2", "mas", "rmse", "features", "importances"]).to_csv(
+            results_filename, index=False)
+
+    # Predict symptomatic milestones over 0
+    for milestone in milestone_info.loc[milestone_info["use0"] == 1, "colname"].tolist():
+        # Description of milestone
+        milestone_description = milestone_info.loc[milestone_info["colname"] == milestone, "mean0"].item()
+
+        # Configure and run model
+        run(target="TIME_UNTIL_MILESTONE",
+            score_name="TOTAL",
+            feature_elimination_n=.025,
+            gen_filename="data/PPMI_all_features.csv",
+            gen_action=True,
+            gen_updrs_subsets=True,
+            gen_time=True,
+            gen_future=False,
+            gen_milestones=True,
+            gen_milestone_features_values=[(milestone, 0, milestone_description)],
+            gen_slopes=False,
+            predictors_filename="data/predictors.csv",
+            predictors_action=True,
+            feature_importance_n=.001,
+            grid_search_action=True,
+            grid_search_results=False,
+            print_results=print_results,
+            results_filename=results_filename,
+            drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG",
+                             "COMPLT",
+                             "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
+                             "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3",
+                             "TIME_NOW",
+                             "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE",
+                             "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN", "SXDT", "PDDXDT", "SXDT_x",
+                             "PDDXDT_x", "TIME_SINCE_DIAGNOSIS"])
+
+    print("Done [Over 0]")
+
+    # Results filename
+    results_filename = "data/PPMI_Milestones_Over_1.csv"
+
+    # If not print results, output results to file
+    if not print_results:
+        pd.DataFrame(
+            columns=["milestone", "description", "base", "oob", "r2", "mas", "rmse", "features", "importances"]).to_csv(
+            results_filename, index=False)
+
+    # Predict symptomatic milestones over 0
+    for milestone in milestone_info.loc[milestone_info["use1"] == 1, "colname"].tolist():
+        # Description of milestone
+        milestone_description = milestone_info.loc[milestone_info["colname"] == milestone, "mean1"].item()
+
+        # Configure and run model
+        run(target="TIME_UNTIL_MILESTONE",
+            score_name="TOTAL",
+            feature_elimination_n=.025,
+            gen_filename="data/PPMI_all_features.csv",
+            gen_action=True,
+            gen_updrs_subsets=True,
+            gen_time=True,
+            gen_future=False,
+            gen_milestones=True,
+            gen_milestone_features_values=[(milestone, 1, milestone_description)],
+            gen_slopes=False,
+            predictors_filename="data/predictors.csv",
+            predictors_action=True,
+            feature_importance_n=.001,
+            grid_search_action=True,
+            grid_search_results=False,
+            print_results=print_results,
+            results_filename=results_filename,
+            drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG",
+                             "COMPLT",
+                             "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
+                             "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "APPRDX", "GENDER", "CNO", "PAG_UPDRS3",
+                             "TIME_NOW",
+                             "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE",
+                             "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN", "SXDT", "PDDXDT", "SXDT_x",
+                             "PDDXDT_x", "TIME_SINCE_DIAGNOSIS"])
+
+    print("Done [Over 1]")
