@@ -104,7 +104,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     def print_feature_importances(alg, name):
         alg.fit(data[predictors], data[target])
         if output:
-            output_set["Feature Importances"] = zip(predictors, alg.feature_importances_)
+            output_set["Feature Importances " + name] = zip(predictors, alg.feature_importances_)
         else:
             print("Feature Importances [" + name + "]")
             for feature, imp in sorted(zip(predictors, alg.feature_importances_), key=lambda x: x[1]):
@@ -122,7 +122,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     def print_oob_score(alg, name):
         score = alg.oob_score_
         if output:
-            output_set["OOB Score"] = score
+            output_set["OOB Score " + name] = score
         else:
             print("OOB Score: {} [{}]".format(score, name))
 
@@ -133,7 +133,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds,
                                                       scoring="mean_squared_error")
             if output:
-                output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(
+                output_set["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
                     abs(scores.mean()) ** 0.5, scores.std() ** 0.5)
             else:
                 print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()) ** 0.5,
@@ -141,8 +141,9 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         else:
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
             if output:
-                output_set["Cross Validation {}".format(scoring)] = "{:0.2f} (+/- {:0.2f})".format(abs(scores.mean()),
-                                                                                                   scores.std())
+                output_set["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
+                    abs(scores.mean()),
+                    scores.std())
             else:
                 print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()), scores.std(), name,
                                                                                  scoring))
@@ -214,9 +215,6 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
     # Grid search
     def print_grid_search(alg, name, params):
-        # Print algorithm being grid searched
-        print("Grid Search [{}]".format(name))
-
         # Run grid search
         if scoring == "root_mean_squared_error":
             grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring="mean_squared_error")
@@ -224,15 +222,29 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
             grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring=scoring)
         grid_search.fit(data[predictors], data[target])
 
-        # Print best parameters and score
-        print(grid_search.best_params_)
-        if scoring == "root_mean_squared_error":
-            print("Cross Validation: {} ({})".format(abs(grid_search.best_score_) ** 0.5, scoring))
+        if not output:
+            # Print algorithm being grid searched
+            print("Grid Search [{}]".format(name))
+            # Print best parameters and score
+            print(grid_search.best_params_)
+            if scoring == "root_mean_squared_error":
+                print("Cross Validation: {} ({})".format(abs(grid_search.best_score_) ** 0.5, scoring))
+            else:
+                print("Cross Validation: {} ({})".format(abs(grid_search.best_score_), scoring))
         else:
-            print("Cross Validation: {} ({})".format(abs(grid_search.best_score_), scoring))
+            output_set["Grid Search " + name] = grid_search
+            grid_search_string = "Grid Search [{}]\n{}\nCross Validation: {} ({})"
+            if scoring == "root_mean_squared_error":
+                output_set["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
+                                                                                     abs(grid_search.best_score_)**0.5,
+                                                                                     scoring)
+            else:
+                output_set["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
+                                                                                     abs(grid_search.best_score_),
+                                                                                     scoring)
 
     # Print description of metrics
-    if description is not None:
+    if (not output) and (description is not None):
         print("\n" + description)
 
     # Fit algorithms /just once/ for base score and oob score (as opposed to redundantly refitting)
