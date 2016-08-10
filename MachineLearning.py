@@ -231,9 +231,12 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     def print_grid_search(alg, name, params):
         # Run grid search
         if scoring == "root_mean_squared_error":
-            grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring="mean_squared_error")
+            if output:
+                grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring="mean_squared_error",
+                                           verbose=0 if output else 1)
         else:
-            grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring=scoring)
+            grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring=scoring,
+                                       verbose=0 if output else 1)
         grid_search.fit(data[predictors], data[target])
 
         if not output:
