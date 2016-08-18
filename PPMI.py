@@ -5,6 +5,7 @@ import pandas as pd
 from scipy import stats
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 from sklearn.neighbors import KNeighborsClassifier
@@ -52,8 +53,8 @@ def ppmi(cohorts, target, prediction_range, feature_elimination_n, gen_action, g
 
         # If not print results, output results to file
         if not print_results:
-            pd.DataFrame(columns=[prediction_range, "description", "base", "oob", "r2", "mas", "rmse", "features",
-                                  "importances"]).to_csv(results_filename, index=False)
+            pd.DataFrame(columns=[prediction_range, "description", "base", "oob", "r2", "mas", "rmse", "accuracy",
+                                  "features", "importances"]).to_csv(results_filename, index=False)
 
         # Set range targets
         if prediction_range == "milestones":
@@ -112,7 +113,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         feature_importance_n, grid_search_action, grid_search_results, print_results, results_filename,
         prediction_range, range_target, range_target_description, drop_predictors):
     # Data keys
-    data_keys = ["PATNO", "EVENT_ID", "INFODT", "PDDXDT", "SXDT", "BIRTHDT.x", "APPRDX", target]
+    data_keys = ["PATNO", "EVENT_ID", "INFODT", "PDDXDT", "SXDT", "BIRTHDT.x", "HAS_PD", target]
 
     # Target keys
     target_keys = [score_name] if gen_future or gen_slopes else [
@@ -167,10 +168,8 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
     pd_control_data = pd.get_dummies(pd_control_data, columns=dummy_features)
 
     # Controls have missing PDDXDT and SXDT, set to arbitrary date
-    pd_control_data.loc[np.bitwise_and.reduce(np.array([(pd_control_data[key] == 0) for key in pd_control_data.filter(
-        regex="APPRDX_*PD").keys()])), "PDDXDT"] = pd.to_datetime("1/1/1800")
-    pd_control_data.loc[np.bitwise_and.reduce(np.array([(pd_control_data[key] == 0) for key in pd_control_data.filter(
-        regex="APPRDX_*PD").keys()])), "SXDT"] = pd.to_datetime("1/1/1800")
+    pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
+    pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
 
     if predictors_action:
         if print_results:
@@ -212,6 +211,8 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
     # Select all features in the data set
     all_data_features = list(pd_control_data.columns.values)
 
+    pd_control_data.to_csv("testttttt.csv")
+
     # Generate features (and update all features list)
     train = generate_features(data=pd_control_data, features=all_data_features, filename=gen_filename,
                               action=gen_action, updrs_subsets=gen_updrs_subsets,
@@ -235,8 +236,13 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
     # Futures: 'min_samples_leaf': 100, 'min_samples_split': 25, 'n_estimators': 50
     # Newest Futures: {'n_estimators': 500, 'min_samples_leaf': 2, 'min_samples_split': 4}
     # TRMR: {'n_estimators': 150, 'min_samples_leaf': 2, 'min_samples_split': 8}
+    # Slopes: {'min_samples_split': 50, 'n_estimators': 150, 'min_samples_leaf': 8}
     algs = [
-        RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2, oob_score=True),
+        RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2,
+                              oob_score=True) if not gen_slopes else RandomForestClassifier(n_estimators=750,
+                                                                                            min_samples_split=8,
+                                                                                            min_samples_leaf=2,
+                                                                                            oob_score=True),
         LogisticRegression(),
         SVC(probability=True),
         GaussianNB(),
@@ -280,7 +286,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         # If grid search action, use grid search estimator
         if grid_search_action:
             algs[0] = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                 scoring="r2", grid_search_params=grid_search_params,
+                                 scoring="r2" if not gen_slopes else "accuracy", grid_search_params=grid_search_params,
                                  output=True)["Grid Search Random Forest"].best_estimator_
 
         train[predictors + ["PATNO"]].to_csv("test_yay_delete.csv")
@@ -312,8 +318,8 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         if grid_search_action or grid_search_results:
             # Compute grid search
             grid_search = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                     scoring="r2", grid_search_params=grid_search_params,
-                                     output=True)
+                                     scoring="r2" if not gen_slopes else "accuracy",
+                                     grid_search_params=grid_search_params, output=not print_results)
 
             # If grid search action, use grid search estimator
             if grid_search_action:
@@ -338,6 +344,15 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
                                   cross_val=[True], scoring="root_mean_squared_error", description=None,
                                   output=not print_results))
 
+        # Display classification accuracy
+        metrics.update(mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                                  cross_val=[True], scoring="accuracy", description=None, output=not print_results))
+
+        # Display confusion matrix
+        if gen_slopes:
+            mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                       split_confusion_matrix=[True], description=None, output=not print_results)
+
         # If grid search results, print results
         if grid_search_results:
             print(grid_search["Grid Search String Random Forest"])
@@ -345,7 +360,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         if not print_results:
             # Write results to file
             results = pd.DataFrame(
-                columns=[prediction_range, "description", "base", "oob", "r2", "mas", "rmse", "features",
+                columns=[prediction_range, "description", "base", "oob", "r2", "mas", "rmse", "accuracy", "features",
                          "importances"])
             results.loc[0, prediction_range] = range_target
             results.loc[0, "description"] = range_target_description
@@ -354,6 +369,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
             results.loc[0, "r2"] = metrics["Cross Validation r2 Random Forest"]
             results.loc[0, "mas"] = metrics["Cross Validation mean_absolute_error Random Forest"]
             results.loc[0, "rmse"] = metrics["Cross Validation root_mean_squared_error Random Forest"]
+            results.loc[0, "accuracy"] = metrics["Cross Validation accuracy Random Forest"]
             feature_importances = list(metrics["Feature Importances Random Forest"])
             results.loc[0, "features"] = feature_importances[0][0]
             results.loc[0, "importances"] = feature_importances[0][1]
@@ -518,22 +534,11 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
 
     # Set age, months from diagnosis, and months from first symptom
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    data.loc[np.bitwise_or.reduce(
-        np.array([(data[key] == 1) for key in data.filter(regex="APPRDX_*PD").keys()])), "TIME_SINCE_DIAGNOSIS"] = (
-        data.loc[np.bitwise_or.reduce(
-            np.array([(data[key] == 1) for key in data.filter(regex="APPRDX_*PD").keys()])), datetime_name] -
-        data.loc[
-            np.bitwise_or.reduce(np.array(
-                [(data[key] == 1) for key in data.filter(regex="APPRDX_*PD").keys()])), diagnosis_date_name]).apply(
+    data.loc[data["HAS_PD"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
+        data.loc[data["HAS_PD"] == 1, datetime_name] - data.loc[data["HAS_PD"] == 1, diagnosis_date_name]).apply(
         lambda x: (x / np.timedelta64(1, 'D')) / 30)
-    data.loc[np.bitwise_or.reduce(np.array(
-        [(data[key] == 1) for key in data.filter(regex="APPRDX_*PD").keys()])), "TIME_SINCE_FIRST_SYMPTOM"] = (
-        data.loc[np.bitwise_or.reduce(
-            np.array([(data[key] == 1) for key in data.filter(regex="APPRDX_*PD").keys()])), datetime_name] -
-        data.loc[
-            np.bitwise_or.reduce(np.array(
-                [(data[key] == 1) for key in
-                 data.filter(regex="APPRDX_*PD").keys()])), first_symptom_date_name]).apply(
+    data.loc[data["HAS_PD"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
+        data.loc[data["HAS_PD"] == 1, datetime_name] - data.loc[data["HAS_PD"] == 1, first_symptom_date_name]).apply(
         lambda x: (x / np.timedelta64(1, 'D')) / 30)
 
     # Return data
@@ -675,6 +680,12 @@ def generate_slopes(data, features, id_name, time_name, score_name, progress):
         # Update progress
         prog.update_progress()
 
+    # Label slow, medium, and fast progression
+    new_data["SLOPE_VALUE"] = new_data["SCORE_SLOPE"]
+    new_data.loc[new_data["SLOPE_VALUE"] < 0.06577376, "SCORE_SLOPE"] = 0
+    new_data.loc[(new_data["SLOPE_VALUE"] >= 0.06577376) & (new_data["SCORE_SLOPE"] < 0.66122024), "SCORE_SLOPE"] = 1
+    new_data.loc[new_data["SLOPE_VALUE"] >= 0.66122024, "SCORE_SLOPE"] = 2
+
     # Return new data
     return new_data[new_data["SCORE_SLOPE"].notnull()]
 
@@ -686,7 +697,7 @@ if __name__ == "__main__":
     # PPMI
     ppmi(
         # Cohorts (ex. ["PD", "Control", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
-        cohorts=["PD", "CONTROL"],
+        cohorts=["PD", "GRPD", "GCPD"],
         # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
         target="SCORE_SLOPE",
         # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
@@ -710,11 +721,11 @@ if __name__ == "__main__":
         # Print results (True for print to console, False for print to file)
         print_results=True,
         # Results filename
-        results_filename="data/PPMI_Future.csv",
+        results_filename="data/PPMI_Slopes.csv",
         # Predictors to drop
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
                          "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
                          "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
                          "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
                          "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS"])
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])

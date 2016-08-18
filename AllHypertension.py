@@ -170,12 +170,10 @@ def main():
                 result.loc[0, key] = row[key]
 
     # Total patient count
-    patients_total = len(visits_data.loc[(visits_data["Status"] != "SCREEN FAIL") & (
-        visits_data["Subject"].isin(data["id"])), "Subject"].unique())
+    patients_total = len(visits_data.loc[visits_data["Subject"].isin(data["id"]), "Subject"].unique())
 
     # Iterate through each patient
-    for index, patient in enumerate(visits_data.loc[(visits_data["Status"] != "SCREEN FAIL") & (
-            visits_data["Subject"].isin(data["id"])), "Subject"].unique()):
+    for index, patient in enumerate(visits_data.loc[visits_data["Subject"].isin(data["id"]), "Subject"].unique()):
         # Get patient's timeframe dates
         if not visits_data.loc[visits_data["Subject"] == patient, "RS2"].any():
             if not visits_data.loc[visits_data["Subject"] == patient, "RS1"].any():
@@ -408,4 +406,4 @@ def stats():
 
 
 if __name__ == "__main__":
-    stats()
+    main()
