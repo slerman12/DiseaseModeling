@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import pandas as pd
 from scipy import stats
+import matplotlib.pyplot as plt
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import RandomForestClassifier
@@ -39,9 +40,10 @@ class Progress:
             print()
 
 
-def ppmi(cohorts, target, prediction_range, feature_elimination_n, gen_action, gen_updrs_subsets, prediction_action,
+def ppmi(preprocess_data, cohorts, target, prediction_range, feature_elimination_n, gen_action, gen_updrs_subsets,
+         prediction_action,
          feature_importance_n, grid_search_action, grid_search_results, run_count, print_results, results_filename,
-         drop_predictors):
+         add_predictors, drop_predictors):
     # Milestone info
     milestone_info = pd.read_csv("data/itemizedDistributionOfUPDRSMeaning_Use.csv")
 
@@ -53,7 +55,7 @@ def ppmi(cohorts, target, prediction_range, feature_elimination_n, gen_action, g
 
         # If not print results, output results to file
         if not print_results:
-            pd.DataFrame(columns=[prediction_range, "description", "base", "oob", "r2", "mas", "rmse", "accuracy",
+            pd.DataFrame(columns=[prediction_range, "description", "base", "oob", "r2", "mes", "rmse", "accuracy",
                                   "features", "importances"]).to_csv(results_filename, index=False)
 
         # Set range targets
@@ -76,7 +78,8 @@ def ppmi(cohorts, target, prediction_range, feature_elimination_n, gen_action, g
                 range_target_description = None
 
             # Configure and run model
-            run(cohorts=cohorts,
+            run(preprocess_data=preprocess_data,
+                cohorts=cohorts,
                 target=target,
                 score_name=range_target,
                 feature_elimination_n=feature_elimination_n,
@@ -87,7 +90,7 @@ def ppmi(cohorts, target, prediction_range, feature_elimination_n, gen_action, g
                 gen_future=target == "SCORE_FUTURE",
                 gen_milestones=target == "TIME_UNTIL_MILESTONE",
                 gen_milestone_features_values=[(range_target, i)],
-                gen_slopes=target == "SCORE_SLOPE",
+                gen_slopes=target == "SCORE_SLOPE" or target == "SLOPE_VALUE",
                 predictors_filename="data/predictors.csv",
                 predictors_action=prediction_action,
                 feature_importance_n=feature_importance_n,
@@ -98,8 +101,9 @@ def ppmi(cohorts, target, prediction_range, feature_elimination_n, gen_action, g
                 prediction_range=prediction_range,
                 range_target=range_target,
                 range_target_description=range_target_description,
+                add_predictors=add_predictors,
                 drop_predictors=drop_predictors + [
-                    "TOTAL"] if target == "SCORE_FUTURE" or target == "SCORE_SLOPE" else drop_predictors)
+                    range_target] if target == "SCORE_FUTURE" or target == "SCORE_SLOPE" else drop_predictors)
 
             # Update progress
             progress.update_progress()
@@ -108,10 +112,15 @@ def ppmi(cohorts, target, prediction_range, feature_elimination_n, gen_action, g
         print()
 
 
-def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_action, gen_updrs_subsets, gen_time,
+def run(preprocess_data, cohorts, target, score_name, feature_elimination_n, gen_filename, gen_action,
+        gen_updrs_subsets, gen_time,
         gen_future, gen_milestones, gen_milestone_features_values, gen_slopes, predictors_filename, predictors_action,
         feature_importance_n, grid_search_action, grid_search_results, print_results, results_filename,
-        prediction_range, range_target, range_target_description, drop_predictors):
+        prediction_range, range_target, range_target_description, add_predictors, drop_predictors):
+    # Initialize empty add_predictors
+    if add_predictors is None:
+        add_predictors = []
+
     # Data keys
     data_keys = ["PATNO", "EVENT_ID", "INFODT", "PDDXDT", "SXDT", "BIRTHDT.x", "HAS_PD", target]
 
@@ -122,54 +131,89 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
     # Add target keys to data keys
     data_keys.extend(target_keys)
 
-    # Create the data frames from files
-    with np.warnings.catch_warnings():
-        np.warnings.simplefilter("ignore")
-        all_patients = pd.read_csv("data/all_pats.csv")
-        all_visits = pd.read_csv("data/all_visits.csv")
-        all_updrs = pd.read_csv("data/all_updrs.csv")
+    # TODO: Create data_preprocessing() function for all of this data preprocessing
+    if preprocess_data:
+        # Create the data frames from files
+        with np.warnings.catch_warnings():
+            np.warnings.simplefilter("ignore")
+            all_patients = pd.read_csv("data/all_pats.csv")
+            all_visits = pd.read_csv("data/all_visits.csv")
+            all_updrs = pd.read_csv("data/all_updrs.csv")
 
-    # Enrolled cohorts patients
-    pd_control_patients = all_patients.loc[
-        (np.bitwise_or.reduce(np.array([(all_patients["APPRDX"] == cohort) for cohort in cohorts]))) & (
-            all_patients["ENROLL_STATUS"] == "Enrolled"), "PATNO"].unique()
+        # Enrolled cohorts patients
+        pd_control_patients = all_patients.loc[
+            (np.bitwise_or.reduce(np.array([(all_patients["APPRDX"] == cohort) for cohort in cohorts]))) & (
+                all_patients["ENROLL_STATUS"] == "Enrolled"), "PATNO"].unique()
 
-    # Data for these patients
-    pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)].merge(
-        all_updrs[["PATNO", "EVENT_ID", "TOTAL"]], on=["PATNO", "EVENT_ID"], how="left").merge(
-        all_patients, on="PATNO", how="left", suffixes=["_x", ""])
+        # Data for these patients
+        pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)].merge(
+            all_updrs[["PATNO", "EVENT_ID", "TOTAL"]], on=["PATNO", "EVENT_ID"], how="left").merge(
+            all_patients, on="PATNO", how="left", suffixes=["_x", ""])
 
-    # Only include "off" data
-    pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
+        # Only include "off" data
+        pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
 
-    # Merge SC data onto BL data
-    sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
-        pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
+        # # Merge SC data onto BL data
+        # sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
+        #     pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
+        #
+        # # Remove SC data that already belongs to BL
+        # pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
+        #     [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
-    # Remove SC data that already belongs to BL
-    pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
-        [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
+        # Initiate progress
+        prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
 
-    # Remove SC rows
-    pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
+        # Use SC data where BL is null
+        for patient in pd_control_data["PATNO"].unique():
+            if not pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")].empty:
+                for column in pd_control_data.keys():
+                    if (pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
+                                pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
+                            pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
+                                        pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
+                        pd_control_data.loc[
+                            (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
+                            max(pd_control_data.loc[
+                                    (pd_control_data["PATNO"] == patient) & (
+                                        pd_control_data["EVENT_ID"] == "SC"), column].tolist())
+            # Update progress
+            prog.update_progress()
 
-    # Drop duplicates based on PATNO and EVENT_ID, keep only first
-    pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
+        # Remove SC rows
+        pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
 
-    # Encode to numeric
-    mL.clean_data(data=pd_control_data, encode_auto=["HANDED", "PAG_UPDRS3"], encode_man={
-        "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
-                     "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
+        # Drop duplicates based on PATNO and EVENT_ID, keep only first
+        pd_control_data = pd_control_data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
 
-    # Convert remaining categorical data to binary columns
-    numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
-    dummy_features = [item for item in pd_control_data.columns.values if item not in list(
-        pd_control_data.select_dtypes(include=numerics).columns.values) + drop_predictors]
-    pd_control_data = pd.get_dummies(pd_control_data, columns=dummy_features)
+        # Encode to numeric
+        mL.clean_data(data=pd_control_data, encode_auto=["HANDED", "PAG_UPDRS3"], encode_man={
+            "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
+                         "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
 
-    # Controls have missing PDDXDT and SXDT, set to arbitrary date
-    pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
-    pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
+        # Create HAS_PD column
+        pd_control_data["HAS_PD"] = 0
+        pd_control_data.loc[(pd_control_data["APPRDX"] == "PD") | (pd_control_data["APPRDX"] == "GRPD") | (
+            pd_control_data["APPRDX"] == "GCPD"), "HAS_PD"] = 1
+
+        # Convert remaining categorical data to binary columns
+        numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
+        dummy_features = [item for item in pd_control_data.columns.values if item not in list(
+            pd_control_data.select_dtypes(include=numerics).columns.values) + drop_predictors]
+        pd_control_data = pd.get_dummies(pd_control_data, columns=dummy_features)
+
+        # Controls have missing PDDXDT and SXDT, set to arbitrary date
+        pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
+        pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
+
+        pd_control_data.to_csv("data/PPMI_Clean_Data.csv", index=False)
+    else:
+        # Use preprocessed data
+        pd_control_data = pd.read_csv("data/PPMI_Clean_Data.csv")
+
+        # Convert to correct dtypes
+        pd_control_data[["PATNO", "EVENT_ID"]] = pd_control_data[["PATNO", "EVENT_ID"]].apply(pd.to_numeric,
+                                                                                              errors="coerce")
 
     if predictors_action:
         if print_results:
@@ -182,7 +226,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
     else:
         # Drop unused columns
         pd_control_data = pd_control_data[list(
-            set(pd.read_csv(predictors_filename)["predictors"].values.tolist() + data_keys) & set(
+            set(add_predictors + data_keys) & set(
                 pd_control_data.columns.values.tolist()))]
 
         if print_results:
@@ -190,6 +234,8 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
             print("BEFORE FEATURE ELIMINATION: Patients: {}, Features: {}".format(
                 len(pd_control_data[pd_control_data["EVENT_ID"] == 0]),
                 len(pd_control_data.keys())))
+
+    pd_control_data.to_csv("TEST.csv")
 
     # Perform optimal feature elimination
     if feature_elimination_n is None:
@@ -236,13 +282,13 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
     # Futures: 'min_samples_leaf': 100, 'min_samples_split': 25, 'n_estimators': 50
     # Newest Futures: {'n_estimators': 500, 'min_samples_leaf': 2, 'min_samples_split': 4}
     # TRMR: {'n_estimators': 150, 'min_samples_leaf': 2, 'min_samples_split': 8}
-    # Slopes: {'min_samples_split': 50, 'n_estimators': 150, 'min_samples_leaf': 8}
+    # Slopes: {'n_estimators': 500, 'min_samples_split': 25, 'min_samples_leaf': 2}
     algs = [
         RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2,
-                              oob_score=True) if not gen_slopes else RandomForestClassifier(n_estimators=750,
-                                                                                            min_samples_split=8,
-                                                                                            min_samples_leaf=2,
-                                                                                            oob_score=True),
+                              oob_score=True) if target != "SCORE_SLOPE" else RandomForestClassifier(n_estimators=500,
+                                                                                                     min_samples_split=25,
+                                                                                                     min_samples_leaf=2,
+                                                                                                     oob_score=True),
         LogisticRegression(),
         SVC(probability=True),
         GaussianNB(),
@@ -286,7 +332,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         # If grid search action, use grid search estimator
         if grid_search_action:
             algs[0] = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                 scoring="r2" if not gen_slopes else "accuracy", grid_search_params=grid_search_params,
+                                 scoring="r2" if target != "SCORE_SLOPE" else "accuracy", grid_search_params=grid_search_params,
                                  output=True)["Grid Search Random Forest"].best_estimator_
 
         train[predictors + ["PATNO"]].to_csv("test_yay_delete.csv")
@@ -299,17 +345,20 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         # Set important features as predictors
         predictors = [x for x, y in feature_importances if y >= feature_importance_n]
 
+        # Use predictors plus added predictors
+        add_predictors.extend(predictors)
+
         # Output predictors to file
         pd.DataFrame({"predictors": predictors}).to_csv(predictors_filename, index=False)
 
         # Run with new predictors
-        run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_action, gen_updrs_subsets, gen_time,
-            gen_future, gen_milestones, gen_milestone_features_values, gen_slopes, predictors_filename,
-            False, feature_importance_n, grid_search_action, grid_search_results, print_results, results_filename,
-            prediction_range, range_target, range_target_description, drop_predictors)
+        run(False, cohorts, target, score_name, feature_elimination_n, gen_filename, gen_action,
+            gen_updrs_subsets, gen_time, gen_future, gen_milestones, gen_milestone_features_values, gen_slopes,
+            predictors_filename, False, feature_importance_n, grid_search_action, grid_search_results, print_results,
+            results_filename, prediction_range, range_target, range_target_description, add_predictors, drop_predictors)
     else:
         # Get predictors from file
-        predictors = pd.read_csv(predictors_filename)["predictors"].values.tolist()
+        predictors = add_predictors
 
         # Create file of training data
         train[predictors].to_csv("data/PPMI_train.csv")
@@ -319,7 +368,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
             # Compute grid search
             grid_search = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                                      scoring="r2" if not gen_slopes else "accuracy",
-                                     grid_search_params=grid_search_params, output=not print_results)
+                                     grid_search_params=grid_search_params, output=True)
 
             # If grid search action, use grid search estimator
             if grid_search_action:
@@ -331,7 +380,7 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         # Display metrics, including r2 score
         metrics = mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                              feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
-                             scoring="r2", output=not print_results, )
+                             scoring="r2", output=not print_results)
         # feature_dictionary=[data_dictionary, "FEATURE", "DSCR"])
 
         # Display mean absolute error score
@@ -341,15 +390,19 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
 
         # Display root mean squared error score
         metrics.update(mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                  cross_val=[True], scoring="root_mean_squared_error", description=None,
+                                  cross_val=[True],
+                                  scoring="root_mean_squared_error", description=None,
                                   output=not print_results))
 
-        # Display classification accuracy
-        metrics.update(mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                  cross_val=[True], scoring="accuracy", description=None, output=not print_results))
+        metrics["Cross Validation accuracy Random Forest"] = None
 
-        # Display confusion matrix
+        # Metrics for classification
         if gen_slopes:
+            # Display classification accuracy
+            metrics.update(mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                                      cross_val=[True], scoring="accuracy", description=None, output=not print_results))
+
+            # Display confusion matrix
             mL.metrics(data=train, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                        split_confusion_matrix=[True], description=None, output=not print_results)
 
@@ -360,14 +413,14 @@ def run(cohorts, target, score_name, feature_elimination_n, gen_filename, gen_ac
         if not print_results:
             # Write results to file
             results = pd.DataFrame(
-                columns=[prediction_range, "description", "base", "oob", "r2", "mas", "rmse", "accuracy", "features",
+                columns=[prediction_range, "description", "base", "oob", "r2", "mes", "rmse", "accuracy", "features",
                          "importances"])
             results.loc[0, prediction_range] = range_target
             results.loc[0, "description"] = range_target_description
             results.loc[0, "base"] = metrics["Base Score Random Forest"]
             results.loc[0, "oob"] = metrics["OOB Score Random Forest"]
             results.loc[0, "r2"] = metrics["Cross Validation r2 Random Forest"]
-            results.loc[0, "mas"] = metrics["Cross Validation mean_absolute_error Random Forest"]
+            results.loc[0, "mes"] = metrics["Cross Validation mean_absolute_error Random Forest"]
             results.loc[0, "rmse"] = metrics["Cross Validation root_mean_squared_error Random Forest"]
             results.loc[0, "accuracy"] = metrics["Cross Validation accuracy Random Forest"]
             feature_importances = list(metrics["Feature Importances Random Forest"])
@@ -392,7 +445,6 @@ def feature_row_selection(data, n, data_keys, target_keys, test=False, progress=
                     data[data["EVENT_ID"] == 0]) > n:
                 data = data.drop(column, 1)
 
-    # TODO: Imputation
     # Drop patients with NAs
     data = data[data["PATNO"].isin(
         data.loc[(data["EVENT_ID"] == 0) & (data.notnull().all(axis=1)), "PATNO"])]
@@ -419,6 +471,7 @@ def feature_row_selection(data, n, data_keys, target_keys, test=False, progress=
         return data
 
 
+# Feature generation
 def generate_features(data, features=None, filename="generated_features.csv", action=True, updrs_subsets=True,
                       time=True, future=True, milestones=False, slopes=False, score_name="TOTAL",
                       milestone_features_values=None, progress=True):
@@ -429,14 +482,16 @@ def generate_features(data, features=None, filename="generated_features.csv", ac
         features = []
 
     # Initialize generated features and time name
-    generated_features = []
     time_name = "EVENT_ID"
 
     # Generate features or use pre-generated features
     if action:
+        # Initialize generated features as data
+        generated_features = data
+
         # Generate UPDRS subset sums
         if updrs_subsets:
-            generated_features = generate_updrs_subsets(data=data, features=features)
+            generated_features = generate_updrs_subsets(data=generated_features, features=features)
 
         # Generate time
         if time:
@@ -444,6 +499,7 @@ def generate_features(data, features=None, filename="generated_features.csv", ac
                                                time_name="EVENT_ID", datetime_name="INFODT", birthday_name="BIRTHDT.x",
                                                diagnosis_date_name="PDDXDT", first_symptom_date_name="SXDT",
                                                progress=progress)
+            generated_features.to_csv("TEST1.csv")
             time_name = "TIME_FROM_BL"
 
         # Generate new data set for predicting future visits
@@ -582,7 +638,7 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
         prog.update_progress()
 
     # Return new data without future baseline
-    return new_data[(new_data["TIME_FUTURE"] >= 0) & (new_data["TIME_FUTURE"] < 25)]
+    return new_data[(new_data["TIME_FUTURE"] >= 0) & (new_data["TIME_FUTURE"] <= 24)]
 
 
 def generate_milestones(data, features, id_name, time_name, condition, progress):
@@ -644,10 +700,10 @@ def generate_slopes(data, features, id_name, time_name, score_name, progress):
     new_data = pd.DataFrame(columns=features)
 
     # Initialize progress measures
-    prog = Progress(0, len(data.loc[data[time_name] >= 24, id_name].unique()), "Slopes", progress)
+    prog = Progress(0, len(data.loc[data[time_name] >= 25, id_name].unique()), "Slopes", progress)
 
     # Iterate through patients who have more than 2 years of data
-    for data_id in data.loc[data[time_name] >= 24, id_name].unique():
+    for data_id in data.loc[data[time_name] >= 25, id_name].unique():
         # Set time now
         time_now = 0
 
@@ -659,8 +715,8 @@ def generate_slopes(data, features, id_name, time_name, score_name, progress):
         score_now = row[score_name]
 
         # Variables for linear regression such that only first 24 months are used
-        x = data.loc[(data[id_name] == data_id) & (data[time_name] <= 24), score_name]
-        y = data.loc[(data[id_name] == data_id) & (data[time_name] <= 24), time_name]
+        x = data.loc[(data[id_name] == data_id) & (data[time_name] <= 25), score_name]
+        y = data.loc[(data[id_name] == data_id) & (data[time_name] <= 25), time_name]
 
         # Linear regression
         if any(x) and any(y):
@@ -680,26 +736,283 @@ def generate_slopes(data, features, id_name, time_name, score_name, progress):
         # Update progress
         prog.update_progress()
 
-    # Label slow, medium, and fast progression
+    # Remove nulls
+    new_data = new_data[new_data["SCORE_SLOPE"].notnull()]
+
+    # Set slope values
     new_data["SLOPE_VALUE"] = new_data["SCORE_SLOPE"]
-    new_data.loc[new_data["SLOPE_VALUE"] < 0.06577376, "SCORE_SLOPE"] = 0
-    new_data.loc[(new_data["SLOPE_VALUE"] >= 0.06577376) & (new_data["SCORE_SLOPE"] < 0.66122024), "SCORE_SLOPE"] = 1
-    new_data.loc[new_data["SLOPE_VALUE"] >= 0.66122024, "SCORE_SLOPE"] = 2
+
+    # Get tertiles
+    tertile_1 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "SLOPE_VALUE"], 33 + 1 / 3)
+    tertile_2 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "SLOPE_VALUE"], 66 + 2 / 3)
+
+    # Label slow, medium, and fast progression
+    new_data.loc[new_data["SLOPE_VALUE"] < tertile_1, "SCORE_SLOPE"] = 0
+    new_data.loc[(new_data["SLOPE_VALUE"] >= tertile_1) & (new_data["SLOPE_VALUE"] < tertile_2), "SCORE_SLOPE"] = 1
+    new_data.loc[new_data["SLOPE_VALUE"] >= tertile_2, "SCORE_SLOPE"] = 2
 
     # Return new data
-    return new_data[new_data["SCORE_SLOPE"].notnull()]
+    return new_data
 
 
 if __name__ == "__main__":
     # Set seed
     np.random.seed(0)
 
-    # PPMI
+    test = pd.read_csv("data/PPMI_all_features.csv")
+
+    print(test.columns.to_series().groupby(test.dtypes).groups)
+
+    print([key for key in test.keys() if key not in test.dropna(axis=1, how='any').keys()])
+
+    # # Future MCATOT
+    # ppmi(
+    #     # Preprocess the data again if raw data has changed
+    #     preprocess_data=False,
+    #     # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+    #     cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+    #     # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
+    #     target="SCORE_FUTURE",
+    #     # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+    #     prediction_range="MCATOT",
+    #     # Feature elimination NA cutoff (set to None to recalculate)
+    #     feature_elimination_n=.025,
+    #     # Re-generate features
+    #     gen_action=True,
+    #     # Generate UPDRS subsets (NP1, NP2, NP3)
+    #     gen_updrs_subsets=True,
+    #     # Re-compute predictors
+    #     prediction_action=True,
+    #     # Importance cutoff for predictors
+    #     feature_importance_n=.001,
+    #     # Use grid search-optimized model
+    #     grid_search_action=True,
+    #     # Print optimal grid search parameters
+    #     grid_search_results=True,
+    #     # How many times to run (this will also determine X + 1 for overX when running milestones)
+    #     run_count=1,
+    #     # Print results (True for print to console, False for print to file)
+    #     print_results=False,
+    #     # Results filename
+    #     results_filename="data/PPMI_Future_MCATOT.csv",
+    #     # If predictors action, add these, else use only these
+    #     add_predictors=None,
+    #     # Predictors to drop
+    #     drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+    #                      "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+    #                      "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+    #                      "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+    #                      "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+    #                      "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+    #
+    # # Future MSEADLG
+    # ppmi(
+    #     # Preprocess the data again if raw data has changed
+    #     preprocess_data=False,
+    #     # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+    #     cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+    #     # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
+    #     target="SCORE_FUTURE",
+    #     # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+    #     prediction_range="MSEADLG",
+    #     # Feature elimination NA cutoff (set to None to recalculate)
+    #     feature_elimination_n=.025,
+    #     # Re-generate features
+    #     gen_action=True,
+    #     # Generate UPDRS subsets (NP1, NP2, NP3)
+    #     gen_updrs_subsets=True,
+    #     # Re-compute predictors
+    #     prediction_action=True,
+    #     # Importance cutoff for predictors
+    #     feature_importance_n=.001,
+    #     # Use grid search-optimized model
+    #     grid_search_action=True,
+    #     # Print optimal grid search parameters
+    #     grid_search_results=True,
+    #     # How many times to run (this will also determine X + 1 for overX when running milestones)
+    #     run_count=1,
+    #     # Print results (True for print to console, False for print to file)
+    #     print_results=False,
+    #     # Results filename
+    #     results_filename="data/PPMI_Future_MSEADLG.csv",
+    #     # If predictors action, add these, else use only these
+    #     add_predictors=None,
+    #     # Predictors to drop
+    #     drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+    #                      "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+    #                      "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+    #                      "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+    #                      "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+    #                      "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+    #
+    # Future JLO_TOTRAW
     ppmi(
-        # Cohorts (ex. ["PD", "Control", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
-        cohorts=["PD", "GRPD", "GCPD"],
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
         # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
+        target="SCORE_FUTURE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="JLO_TOTRAW",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=1,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_Future_JLO_TOTRAW.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+
+    # MCATOT progression
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE", "SLOPE_VALUE")
+        target="SLOPE_VALUE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="MCATOT",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=0.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=1,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_MCATOT_Progression_Continuous.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+
+    # MCATOT progression categorical (slow, moderate, fast)
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE", "SLOPE_VALUE")
         target="SCORE_SLOPE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="MCATOT",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=0.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=1,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_MCATOT_Progression_Categorical.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+
+    # UPDRS progression
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE" ex. "SLOPE_VALUE")
+        target="SCORE_SLOPE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="TOTAL",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=1,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_UPDRS_Progression.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+
+    # Future UPDRS
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
+        target="SCORE_FUTURE",
         # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
         prediction_range="TOTAL",
         # Feature elimination NA cutoff (set to None to recalculate)
@@ -721,7 +1034,9 @@ if __name__ == "__main__":
         # Print results (True for print to console, False for print to file)
         print_results=True,
         # Results filename
-        results_filename="data/PPMI_Slopes.csv",
+        results_filename="data/PPMI_Future_UPDRS.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
         # Predictors to drop
         drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
                          "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
@@ -729,3 +1044,46 @@ if __name__ == "__main__":
                          "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
                          "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
                          "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+
+    # Symptom onsets
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
+        target="TIME_UNTIL_MILESTONE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="milestones",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=2,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_Symptom_Onsets.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+
+    # Ensure that plots show while code continues running
+    plt.show()
