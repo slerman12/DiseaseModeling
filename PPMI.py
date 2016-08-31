@@ -83,7 +83,7 @@ def ppmi(preprocess_data, cohorts, target, prediction_range, feature_elimination
                 target=target,
                 score_name=range_target,
                 feature_elimination_n=feature_elimination_n,
-                gen_filename="data/PPMI_all_features.csv",
+                gen_filename="data/" + results_filename + "_All_Features.csv",
                 gen_action=gen_action,
                 gen_updrs_subsets=gen_updrs_subsets,
                 gen_time=True,
@@ -209,7 +209,9 @@ def run(preprocess_data, cohorts, target, score_name, feature_elimination_n, gen
         pd_control_data.to_csv("data/PPMI_Clean_Data.csv", index=False)
     else:
         # Use preprocessed data
-        pd_control_data = pd.read_csv("data/PPMI_Clean_Data.csv")
+        with np.warnings.catch_warnings():
+            np.warnings.simplefilter("ignore")
+            pd_control_data = pd.read_csv("data/PPMI_Clean_Data.csv")
 
         # Convert to correct dtypes
         pd_control_data[["PATNO", "EVENT_ID"]] = pd_control_data[["PATNO", "EVENT_ID"]].apply(pd.to_numeric,
@@ -507,8 +509,7 @@ def generate_features(data, features=None, filename="generated_features.csv", ac
         # Generate new data set for predicting future visits
         if future:
             generated_features = generate_future(data=generated_features, features=features, id_name="PATNO",
-                                                 score_name=score_name, time_name=time_name, time_key_name="EVENT_ID",
-                                                 progress=progress)
+                                                 score_name=score_name, time_name=time_name, progress=progress)
 
         def milestone_condition(milestone_data):
             condition = [milestone_data[pair[0]] > pair[1] for pair in milestone_features_values]
@@ -603,7 +604,7 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     return data
 
 
-def generate_future(data, features, id_name, score_name, time_name, time_key_name, progress):
+def generate_future(data, features, id_name, score_name, time_name, progress):
     # Set features
     new_features = ["SCORE_NOW", "TIME_NOW", "TIME_FUTURE", "TIME_PASSED", "SCORE_FUTURE"]
     for feature in new_features:
@@ -622,7 +623,7 @@ def generate_future(data, features, id_name, score_name, time_name, time_key_nam
     for group_id in data[id_name].unique():
 
         # Group's key, times, and scores
-        key_time_score = data[data[id_name] == group_id][[id_name, time_key_name, time_name, score_name]]
+        key_time_score = data[data[id_name] == group_id][[id_name, time_name, score_name]]
         key_time_score.rename(columns={time_name: "TIME_FUTURE", score_name: "SCORE_FUTURE"}, inplace=True)
 
         # Add group's baseline information
@@ -762,85 +763,85 @@ if __name__ == "__main__":
     # Set seed
     np.random.seed(0)
 
-    # # Future MCATOT
-    # ppmi(
-    #     # Preprocess the data again if raw data has changed
-    #     preprocess_data=False,
-    #     # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
-    #     cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
-    #     # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
-    #     target="SCORE_FUTURE",
-    #     # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
-    #     prediction_range="MCATOT",
-    #     # Feature elimination NA cutoff (set to None to recalculate)
-    #     feature_elimination_n=.025,
-    #     # Re-generate features
-    #     gen_action=True,
-    #     # Generate UPDRS subsets (NP1, NP2, NP3)
-    #     gen_updrs_subsets=True,
-    #     # Re-compute predictors
-    #     prediction_action=True,
-    #     # Importance cutoff for predictors
-    #     feature_importance_n=.001,
-    #     # Use grid search-optimized model
-    #     grid_search_action=True,
-    #     # Print optimal grid search parameters
-    #     grid_search_results=True,
-    #     # How many times to run (this will also determine X + 1 for overX when running milestones)
-    #     run_count=1,
-    #     # Print results (True for print to console, False for print to file)
-    #     print_results=False,
-    #     # Results filename
-    #     results_filename="data/PPMI_Future_MCATOT.csv",
-    #     # If predictors action, add these, else use only these
-    #     add_predictors=None,
-    #     # Predictors to drop
-    #     drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
-    #                      "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
-    #                      "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
-    #                      "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
-    #                      "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-    #                      "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+    # Future MCATOT
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
+        target="SCORE_FUTURE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="MCATOT",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=1,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_Future_MCATOT.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
 
-    # # Future MSEADLG
-    # ppmi(
-    #     # Preprocess the data again if raw data has changed
-    #     preprocess_data=False,
-    #     # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
-    #     cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
-    #     # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
-    #     target="SCORE_FUTURE",
-    #     # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
-    #     prediction_range="MSEADLG",
-    #     # Feature elimination NA cutoff (set to None to recalculate)
-    #     feature_elimination_n=.025,
-    #     # Re-generate features
-    #     gen_action=True,
-    #     # Generate UPDRS subsets (NP1, NP2, NP3)
-    #     gen_updrs_subsets=True,
-    #     # Re-compute predictors
-    #     prediction_action=True,
-    #     # Importance cutoff for predictors
-    #     feature_importance_n=.001,
-    #     # Use grid search-optimized model
-    #     grid_search_action=False,
-    #     # Print optimal grid search parameters
-    #     grid_search_results=False,
-    #     # How many times to run (this will also determine X + 1 for overX when running milestones)
-    #     run_count=1,
-    #     # Print results (True for print to console, False for print to file)
-    #     print_results=True,
-    #     # Results filename
-    #     results_filename="data/PPMI_Future_MSEADLG.csv",
-    #     # If predictors action, add these, else use only these
-    #     add_predictors=None,
-    #     # Predictors to drop
-    #     drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
-    #                      "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
-    #                      "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
-    #                      "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
-    #                      "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-    #                      "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+    # Future MSEADLG
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE)
+        target="SCORE_FUTURE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="MSEADLG",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=1,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_Future_MSEADLG.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
 
     # Future JLO_TOTRAW
     ppmi(
@@ -863,13 +864,13 @@ if __name__ == "__main__":
         # Importance cutoff for predictors
         feature_importance_n=.001,
         # Use grid search-optimized model
-        grid_search_action=False,
+        grid_search_action=True,
         # Print optimal grid search parameters
-        grid_search_results=False,
+        grid_search_results=True,
         # How many times to run (this will also determine X + 1 for overX when running milestones)
         run_count=1,
         # Print results (True for print to console, False for print to file)
-        print_results=True,
+        print_results=False,
         # Results filename
         results_filename="data/PPMI_Future_JLO_TOTRAW.csv",
         # If predictors action, add these, else use only these
@@ -882,7 +883,7 @@ if __name__ == "__main__":
                          "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
                          "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
 
-    # MCATOT progression
+    # MCATOT progression continuous
     ppmi(
         # Preprocess the data again if raw data has changed
         preprocess_data=False,
@@ -962,7 +963,47 @@ if __name__ == "__main__":
                          "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
                          "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
 
-    # UPDRS progression
+    # UPDRS progression continuous
+    ppmi(
+        # Preprocess the data again if raw data has changed
+        preprocess_data=False,
+        # Cohorts (ex. ["PD", "CONTROL", "SWEDD", "PRODOMAL", "GRPD", "GCPD", "GRUA", "GCUA"]
+        cohorts=["CONTROL", "PD", "GRPD", "GCPD"],
+        # Target (ex. "SCORE_FUTURE" ex. "TIME_UNTIL_MILESTONE" ex. "SCORE_SLOPE" ex. "SLOPE_VALUE")
+        target="SLOPE_VALUE",
+        # Type of target to predict (ex. "TOTAL" ex. "NP2TRMR" ex. "milestones")
+        prediction_range="TOTAL",
+        # Feature elimination NA cutoff (set to None to recalculate)
+        feature_elimination_n=.025,
+        # Re-generate features
+        gen_action=True,
+        # Generate UPDRS subsets (NP1, NP2, NP3)
+        gen_updrs_subsets=True,
+        # Re-compute predictors
+        prediction_action=True,
+        # Importance cutoff for predictors
+        feature_importance_n=.001,
+        # Use grid search-optimized model
+        grid_search_action=True,
+        # Print optimal grid search parameters
+        grid_search_results=True,
+        # How many times to run (this will also determine X + 1 for overX when running milestones)
+        run_count=1,
+        # Print results (True for print to console, False for print to file)
+        print_results=False,
+        # Results filename
+        results_filename="data/PPMI_UPDRS_Progression_Continuous.csv",
+        # If predictors action, add these, else use only these
+        add_predictors=None,
+        # Predictors to drop
+        drop_predictors=["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
+                         "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+                         "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+                         "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "SCORE_SLOPE", "TIME_OF_MILESTONE",
+                         "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+                         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "SLOPE_VALUE"])
+
+    # UPDRS progression categorical ("slow", "moderate", and "fast")
     ppmi(
         # Preprocess the data again if raw data has changed
         preprocess_data=False,
@@ -983,15 +1024,15 @@ if __name__ == "__main__":
         # Importance cutoff for predictors
         feature_importance_n=.001,
         # Use grid search-optimized model
-        grid_search_action=False,
+        grid_search_action=True,
         # Print optimal grid search parameters
-        grid_search_results=False,
+        grid_search_results=True,
         # How many times to run (this will also determine X + 1 for overX when running milestones)
         run_count=1,
         # Print results (True for print to console, False for print to file)
-        print_results=True,
+        print_results=False,
         # Results filename
-        results_filename="data/PPMI_UPDRS_Progression.csv",
+        results_filename="data/PPMI_UPDRS_Progression_Categorical.csv",
         # If predictors action, add these, else use only these
         add_predictors=None,
         # Predictors to drop
@@ -1068,7 +1109,7 @@ if __name__ == "__main__":
             # Print optimal grid search parameters
             grid_search_results=True,
             # How many times to run (this will also determine X + 1 for overX when running milestones)
-            run_count=2,
+            run_count=1,
             # Print results (True for print to console, False for print to file)
             print_results=False,
             # Results filename
