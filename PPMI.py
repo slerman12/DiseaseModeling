@@ -83,7 +83,7 @@ def ppmi(preprocess_data, cohorts, target, prediction_range, feature_elimination
                 target=target,
                 score_name=range_target,
                 feature_elimination_n=feature_elimination_n,
-                gen_filename="data/" + results_filename + "_All_Features.csv",
+                gen_filename="data/" + target + "_" + range_target + "_All_Features.csv",
                 gen_action=gen_action,
                 gen_updrs_subsets=gen_updrs_subsets,
                 gen_time=True,
