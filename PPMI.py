@@ -345,12 +345,23 @@ def run(preprocess_data, cohorts, target, score_name, feature_elimination_n, gen
                                          alg_names=alg_names, feature_importances=[True], output=True,
                                          description=None)["Feature Importances Random Forest"]
 
+        # Feature importance dictionary
+        fid = {}
+        for x, y in feature_importances:
+            fid[x] = y
+
         # Set important features as predictors
         predictors = [x for x, y in feature_importances if y >= feature_importance_n]
 
         # Linear dependant features
         lin_dependencies = [["NP1", "NP2", "NP3", "TOTAL" if score_name != "TOTAL" else "SCORE_NOW"],
-                            ["NP1", "NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", ]]
+                            ["GENDER.y_M", "GENDER.y_FNC", "GENDER.y_FC"],
+                            ["NP1", "NP1COG", "NP1HALL", "NP1DPRS", "NP2ANXS", "NP1APAT", "NP1DDS"]]
+
+        # Eliminate lowest ranking linearly dependant feature
+        for dep in lin_dependencies:
+            if set(dep) < predictors:
+                predictors.remove(min(dep, key=lambda n: fid[n]))
 
         # Use predictors plus added predictors
         add_predictors.extend(predictors)
@@ -787,13 +798,13 @@ if __name__ == "__main__":
         # Importance cutoff for predictors
         feature_importance_n=.003,
         # Use grid search-optimized model
-        grid_search_action=True,
+        grid_search_action=False,
         # Print optimal grid search parameters
-        grid_search_results=True,
+        grid_search_results=False,
         # How many times to run (this will also determine X + 1 for overX when running milestones)
         run_count=1,
         # Print results (True for print to console, False for print to file)
-        print_results=False,
+        print_results=True,
         # Results filename
         results_filename="data/PPMI_Future_MCATOT.csv",
         # If predictors action, add these, else use only these
