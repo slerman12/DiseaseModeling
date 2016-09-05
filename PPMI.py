@@ -360,7 +360,7 @@ def run(preprocess_data, cohorts, target, score_name, feature_elimination_n, gen
 
         # Eliminate lowest ranking linearly dependant feature
         for dep in lin_dependencies:
-            if set(dep) < predictors:
+            if set(dep) < set(predictors):
                 predictors.remove(min(dep, key=lambda n: fid[n]))
 
         # Use predictors plus added predictors
