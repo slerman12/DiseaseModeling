@@ -798,15 +798,15 @@ if __name__ == "__main__":
         # Importance cutoff for predictors
         feature_importance_n=.003,
         # Use grid search-optimized model
-        grid_search_action=False,
+        grid_search_action=True,
         # Print optimal grid search parameters
-        grid_search_results=False,
+        grid_search_results=True,
         # How many times to run (this will also determine X + 1 for overX when running milestones)
         run_count=1,
         # Print results (True for print to console, False for print to file)
-        print_results=True,
+        print_results=False,
         # Results filename
-        results_filename="data/PPMI_Future_MCATOT.csv",
+        results_filename="data/Future_Score/PPMI_Future_MCATOT.csv",
         # If predictors action, add these, else use only these
         add_predictors=None,
         # Predictors to drop
@@ -848,7 +848,7 @@ if __name__ == "__main__":
         # Print results (True for print to console, False for print to file)
         print_results=False,
         # Results filename
-        results_filename="data/Future/PPMI_Future_MSEADLG.csv",
+        results_filename="data/Future_Score/PPMI_Future_MSEADLG.csv",
         # If predictors action, add these, else use only these
         add_predictors=None,
         # Predictors to drop
@@ -890,7 +890,7 @@ if __name__ == "__main__":
         # Print results (True for print to console, False for print to file)
         print_results=False,
         # Results filename
-        results_filename="data/Future/PPMI_Future_JLO_TOTRAW.csv",
+        results_filename="data/Future_Score/PPMI_Future_JLO_TOTRAW.csv",
         # If predictors action, add these, else use only these
         add_predictors=None,
         # Predictors to drop
@@ -1100,7 +1100,7 @@ if __name__ == "__main__":
         # Print results (True for print to console, False for print to file)
         print_results=False,
         # Results filename
-        results_filename="data/Future/PPMI_Future_UPDRS.csv",
+        results_filename="data/Future_Score/PPMI_Future_UPDRS.csv",
         # If predictors action, add these, else use only these
         add_predictors=None,
         # Predictors to drop
