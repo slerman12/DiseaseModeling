@@ -15,7 +15,6 @@ import MachineLearning as mL
 
 # Data specific operations (Merge into one file, generate time from baseline in months, standardize feature name/values)
 def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_results=False):
-    # TODO: Create data_preprocessing() function for all of this data preprocessing
     # Create the data frames from files
     with np.warnings.catch_warnings():
         np.warnings.simplefilter("ignore")
@@ -36,7 +35,6 @@ def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_r
     # Only include "off" data
     pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
 
-    # TODO: Merge SC onto BL
     # # Merge SC data onto BL data
     # sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
     #     pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
@@ -45,24 +43,24 @@ def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_r
     # pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
     #     [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
-    # # Initiate progress
-    # prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
-    #
-    # # Use SC data where BL is null
-    # for patient in pd_control_data["PATNO"].unique():
-    #     if not pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")].empty:
-    #         for column in pd_control_data.keys():
-    #             if (pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
-    #                         pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
-    #                     pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
-    #                                 pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
-    #                 pd_control_data.loc[
-    #                     (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
-    #                     max(pd_control_data.loc[
-    #                             (pd_control_data["PATNO"] == patient) & (
-    #                                 pd_control_data["EVENT_ID"] == "SC"), column].tolist())
-    #     # Update progress
-    #     prog.update_progress()
+    # Initiate progress
+    prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
+
+    # Use SC data where BL is null
+    for patient in pd_control_data["PATNO"].unique():
+        if not pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")].empty:
+            for column in pd_control_data.keys():
+                if (pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
+                            pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
+                        pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
+                                    pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
+                    pd_control_data.loc[
+                        (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
+                        max(pd_control_data.loc[
+                                (pd_control_data["PATNO"] == patient) & (
+                                    pd_control_data["EVENT_ID"] == "SC"), column].tolist())
+        # Update progress
+        prog.update_progress()
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
@@ -73,7 +71,7 @@ def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_r
     # Encode to numeric
     mL.clean_data(data=pd_control_data, encode_auto=["HANDED", "PAG_UPDRS3"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
-                     "V09": 9, "V10": 10, "V11": 11, "V12": 12}})
+                     "V09": 9, "V10": 10, "V11": 11, "V12": 12, "ST": -1}})
 
     # Create HAS_PD column
     pd_control_data["HAS_PD"] = 0
@@ -265,7 +263,7 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     results = {}
 
     # List of predictors
-    predictors = list(data.columns.values)
+    predictors = list(data.drop(target, axis=1).columns.values)
 
     # Parameters for grid search
     grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
@@ -328,8 +326,21 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     # Set important features as top predictors
     top_predictors = [x for x, y in feature_importances if y >= feature_importance_n]
 
-    # Univariate feature selection
-    # mL.describe_data(data=train, univariate_feature_selection=[predictors, target])
+    # TODO: Perhaps include ability to eliminate linear dependencies?
+    # # Feature importance dictionary
+    # fid = {}
+    # for x, y in feature_importances:
+    #     fid[x] = y
+    #
+    # # Linear dependant features
+    # lin_dependencies = [["NP1", "NP2", "NP3", "TOTAL" if score_name != "TOTAL" else "SCORE_NOW"],
+    #                     ["GENDER.y_M", "GENDER.y_FNC", "GENDER.y_FC"],
+    #                     ["NP1", "NP1COG", "NP1HALL", "NP1DPRS", "NP2ANXS", "NP1APAT", "NP1DDS"]]
+    #
+    # # Eliminate lowest ranking linearly dependant feature
+    # for dep in lin_dependencies:
+    #     if set(dep) < set(top_predictors):
+    #         top_predictors.remove(min(dep, key=lambda n: fid[n]))
 
     # Display metrics, including r2 score
     metrics = mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
@@ -485,8 +496,6 @@ def generate_future_score(data, features, id_name, score_name, time_name, progre
 
     # Initialize progress measures
     prog = Progress(0, len(data[id_name].unique()), "Generating Futures", progress)
-
-    debug = []
 
     for group_id in data[id_name].unique():
         # Group's key, times, and scores
@@ -670,13 +679,17 @@ if __name__ == "__main__":
             "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_CONTINUOUS", "TOTAL"]
 
     # Data specific operations
-    train = preprocess_data()
+    train = preprocess_data(cohorts=["CONTROL", "PD", "GRPD", "GCPD"], print_results=True)
 
     # Prepare data
     train = process_data(train, "Rate of Progression", patient, time, "TOTAL", drop, True)
 
     # Maximize data dimensions w/o NAs
     train = patient_and_feature_selection(train, patient, time, None, drop, None, True)
+
+    # Univariate feature selection
+    mL.describe_data(data=train, univariate_feature_selection=[list(train.drop("RATE_DISCRETE", axis=1).columns.values),
+                                                               "RATE_DISCRETE"])
 
     # Primary run of model
     train = model(train, "Rate of Progression", "RATE_DISCRETE", patient, time, True, drop, None, 0.001, True, False)[
