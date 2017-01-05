@@ -14,7 +14,7 @@ import MachineLearning as mL
 
 
 # Data specific operations (Merge into one file, generate time from baseline in months, standardize feature name/values)
-def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_results=False):
+def preprocess_data(target, data_filename="preprocessed_data.csv", cohorts=None, print_results=False):
     # Create the data frames from files
     with np.warnings.catch_warnings():
         np.warnings.simplefilter("ignore")
@@ -43,24 +43,24 @@ def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_r
     # pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
     #     [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
-    # Initiate progress
-    prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
-
-    # Use SC data where BL is null
-    for subject in pd_control_data["PATNO"].unique():
-        if not pd_control_data[(pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "SC")].empty:
-            for column in pd_control_data.keys():
-                if (pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
-                            pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
-                        pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
-                                    pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
-                    pd_control_data.loc[
-                        (pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
-                        max(pd_control_data.loc[
-                                (pd_control_data["PATNO"] == subject) & (
-                                    pd_control_data["EVENT_ID"] == "SC"), column].tolist())
-        # Update progress
-        prog.update_progress()
+    # # Initiate progress
+    # prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
+    #
+    # # Use SC data where BL is null
+    # for subject in pd_control_data["PATNO"].unique():
+    #     if not pd_control_data[(pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "SC")].empty:
+    #         for column in pd_control_data.keys():
+    #             if (pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
+    #                         pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
+    #                     pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
+    #                                 pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
+    #                 pd_control_data.loc[
+    #                     (pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
+    #                     max(pd_control_data.loc[
+    #                             (pd_control_data["PATNO"] == subject) & (
+    #                                 pd_control_data["EVENT_ID"] == "SC"), column].tolist())
+    #     # Update progress
+    #     prog.update_progress()
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
@@ -81,6 +81,16 @@ def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_r
     # Controls have missing PDDXDT and SXDT, set to arbitrary date
     pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
     pd_control_data.loc[pd_control_data["HAS_PD"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
+
+    # Set feature keys
+    feature_keys = ["PATNO", "EVENT_ID", "INFODT", "PDDXDT", "SXDT", "BIRTHDT.x", "HAS_PD", target]
+
+    # Drop patients with baseline NA at feature keys
+    pd_control_data = pd_control_data[pd_control_data["PATNO"].isin(pd_control_data.loc[
+                                                                        (pd_control_data["EVENT_ID"] == 0) & (
+                                                                            pd_control_data[
+                                                                                feature_keys].notnull().all(
+                                                                                    axis=1)), "PATNO"])]
 
     # List of features
     features = list(pd_control_data.columns.values)
@@ -107,9 +117,6 @@ def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_r
 # Drop patients w/o BL, drop rows w/ NA at key features, create binary dummies, generate features, targets, and data set
 def process_data(data, model_type, patient_key, time_key, target, drop_predictors=None, print_results=False,
                  data_filename="processed_data.csv", symptom_features_values=None):
-    # Convert to correct dtypes
-    data[[patient_key, time_key]] = data[[patient_key, time_key]].apply(pd.to_numeric, errors="coerce")
-
     # Model type booleans
     future_score = model_type == "Future Score"
     rate_of_progression = model_type == "Rate of Progression"
@@ -159,7 +166,8 @@ def process_data(data, model_type, patient_key, time_key, target, drop_predictor
     # Drop unused columns
     for column in data.keys():
         if column in drop_predictors:
-            data = data.drop(column, 1)
+            if column != patient_key and column != time_key:
+                data = data.drop(column, 1)
 
     # Print data diagnostics
     if print_results:
@@ -176,13 +184,17 @@ def process_data(data, model_type, patient_key, time_key, target, drop_predictor
 # Automatic feature and row elimination (automatically get rid of NAs and maximize data)
 def patient_and_feature_selection(data, patient_key, time_key, feature_elimination_n=None, drop_predictors=None,
                                   add_predictors=None, print_results=False, data_filename="clean_data.csv"):
-    # Convert to correct dtypes
-    data[[patient_key, time_key]] = data[[patient_key, time_key]].apply(pd.to_numeric, errors="coerce")
+    # Initialize drop/add predictors
+    if drop_predictors is None:
+        drop_predictors = []
+    if add_predictors is None:
+        add_predictors = []
 
     # Drop unused columns
     for column in data.keys():
         if column in drop_predictors:
-            data = data.drop(column, 1)
+            if column != patient_key and column != time_key:
+                data = data.drop(column, 1)
 
     # Eliminate features with more than n (%) NA at BL and then drop patients with NAs at BL
     def feature_row_elimination(n, test=False, progress=False):
@@ -201,10 +213,7 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
                 d.loc[(d[time_key] == 0) & (d.notnull().all(axis=1)), patient_key])]
 
         # Display progress
-        if progress:
-            # Print progress
-            sys.stdout.write("\rProgress: {:.2%} [Feature Elimination]".format(n + .025))
-            sys.stdout.flush()
+        prog.update_progress()
 
         # Return dimensions/d
         if test:
@@ -217,9 +226,12 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
     # Print "before" dimensions
     if print_results:
         # Print number patients and features before feature elimination
-        print("BEFORE FEATURE ELIMINATION: Patients: {}, Features: {}".format(
+        print("BEFORE FEATURE/ROW ELIMINATION: Patients: {}, Features: {}".format(
                 len(data[patient_key].unique()),
                 len(data.keys())))
+
+    # Initiate progress
+    prog = Progress(0, 39, "Feature/Row Elimination", print_results)
 
     # Find optimal feature elimination n
     if feature_elimination_n is None:
@@ -236,7 +248,7 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
     # Print "after" dimensions
     if print_results:
         # Print number patients and features after feature elimination
-        print("AFTER FEATURE ELIMINATION: Patients: {}, Features: {}".format(
+        print("AFTER FEATURE/ROW ELIMINATION: Patients: {}, Features: {}".format(
                 len(data[patient_key].unique()),
                 len(data.keys())))
 
@@ -251,8 +263,11 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
 def model(data, model_type, target, patient_key, time_key, grid_search_action=False,
           drop_predictors=None, add_predictors=None, feature_importance_n=0.1, print_results=True,
           output_results=True, results_filename="results.csv"):
-    # Convert to correct dtypes
-    data[[patient_key, time_key]] = data[[patient_key, time_key]].apply(pd.to_numeric, errors="coerce")
+    # Initialize drop/add predictors
+    if drop_predictors is None:
+        drop_predictors = []
+    if add_predictors is None:
+        add_predictors = []
 
     # Drop unused columns
     for column in data.keys():
@@ -260,7 +275,7 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
             data = data.drop(column, 1)
 
     # Initialize output
-    results = {}
+    model_results = {}
 
     # List of predictors
     predictors = list(data.drop(target, axis=1).columns.values)
@@ -405,12 +420,13 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
         results.to_csv(results_filename, mode="a", header=False, index=False)
 
     # Set results
-    results["Top Predictors"] = top_predictors
-    results["Second Iteration Data"] = data[top_predictors.append(add_predictors)]
-    results["Model"] = algs[0]
+    model_results["Top Predictors"] = top_predictors
+    model_results["Second Iteration Data"] = data[
+        list(set(top_predictors).union(add_predictors).union([patient_key, time_key, target]))]
+    model_results["Model"] = algs[0]
 
-    # Return results
-    return results
+    # Return model_results
+    return model_results
 
 
 def generate_updrs_subsets(data, features):
@@ -636,10 +652,11 @@ def generate_rate_of_progression(data, features, id_name, time_name, score_name,
     return new_data
 
 
+# Display progress in console
 class Progress:
     # Initialize progress measures
-    progress_complete = 0
-    progress_total = 0
+    progress_complete = 0.00
+    progress_total = 0.00
     name = ""
     show = True
 
@@ -654,7 +671,7 @@ class Progress:
 
     def update_progress(self):
         # Update progress
-        self.progress_complete += 1
+        self.progress_complete += 1.00
         if self.show:
             sys.stdout.write("\rProgress: {:.2%} [{}]".format(self.progress_complete / self.progress_total, self.name))
             sys.stdout.flush()
@@ -672,14 +689,16 @@ if __name__ == "__main__":
 
     # Don't use these predictors
     drop = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
-            "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT",
-            "ENROLL_DATE", "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
-            "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "RATE_DISCRETE", "TIME_OF_MILESTONE",
+            "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
+            "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
+            "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "TIME_OF_MILESTONE",
             "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_CONTINUOUS", "TOTAL"]
+            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_CONTINUOUS",
+            "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL",
+            "HAS_PD"]
 
     # Data specific operations
-    train = preprocess_data(cohorts=["CONTROL", "PD", "GRPD", "GCPD"], print_results=True)
+    train = preprocess_data(target="TOTAL", cohorts=["CONTROL", "PD", "GRPD", "GCPD"], print_results=True)
 
     # Prepare data
     train = process_data(train, "Rate of Progression", patient, time, "TOTAL", drop, True)
@@ -692,11 +711,14 @@ if __name__ == "__main__":
                                                                "RATE_DISCRETE"])
 
     # Primary run of model
-    train = model(train, "Rate of Progression", "RATE_DISCRETE", patient, time, True, drop, None, 0.001, True, False)[
-        "Second Iteration Data"]
+    train = model(train, "Rate of Progression", "RATE_DISCRETE", patient, time, False,
+                  [x for x in drop if x not in [patient, time]], None, 0.001, True, False)["Second Iteration Data"]
 
     # Maximize dimensions using only top predictors
     train = patient_and_feature_selection(train, patient, time, None, drop, None, True)
 
     # Run model using top predictors
-    estimator = model(train, "Rate of Progression", "RATE_DISCRETE", patient, time, True, drop, None)["Model"]
+    estimator = model(train, "Rate of Progression", "RATE_DISCRETE", patient, time, False, drop, None)["Model"]
+
+    # Convert to correct dtypes
+    # train[[patient, time]] = train[[patient, time]].apply(pd.to_numeric, errors="coerce")
