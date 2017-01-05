@@ -47,17 +47,17 @@ def preprocess_data(data_filename="preprocessed_data.csv", cohorts=None, print_r
     prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
 
     # Use SC data where BL is null
-    for patient in pd_control_data["PATNO"].unique():
-        if not pd_control_data[(pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "SC")].empty:
+    for subject in pd_control_data["PATNO"].unique():
+        if not pd_control_data[(pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "SC")].empty:
             for column in pd_control_data.keys():
-                if (pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
+                if (pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
                             pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
-                        pd_control_data.loc[(pd_control_data["PATNO"] == patient) & (
+                        pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
                                     pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
                     pd_control_data.loc[
-                        (pd_control_data["PATNO"] == patient) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
+                        (pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
                         max(pd_control_data.loc[
-                                (pd_control_data["PATNO"] == patient) & (
+                                (pd_control_data["PATNO"] == subject) & (
                                     pd_control_data["EVENT_ID"] == "SC"), column].tolist())
         # Update progress
         prog.update_progress()
@@ -190,11 +190,11 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
         d = data.copy()
 
         # Eliminate features with more than n (%) NA at BL
-        for column in d.keys():
-            if column not in add_predictors:
-                if d.loc[d[time_key] == 0, column].isnull().sum().astype(float) / len(
+        for col in d.keys():
+            if col not in add_predictors:
+                if d.loc[d[time_key] == 0, col].isnull().sum().astype(float) / len(
                         d[d[time_key] == 0]) > n:
-                    d = d.drop(column, 1)
+                    d = d.drop(col, 1)
 
         # Drop patients with NAs at BL
         d = d[d[patient_key].isin(
@@ -371,7 +371,7 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
                    split_confusion_matrix=[True], description=None, output=not print_results)
 
     # If grid search results, print results
-    if print_results:
+    if print_results and grid_search_action:
         print(grid_search["Grid Search String Random Forest"])
 
     # Output results file
