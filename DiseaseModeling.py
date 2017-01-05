@@ -43,24 +43,24 @@ def preprocess_data(target, data_filename="preprocessed_data.csv", cohorts=None,
     # pd_control_data.loc[pd_control_data["EVENT_ID"] == "BL"] = sc_bl_merge.drop(
     #     [col for col in sc_bl_merge.columns if col[-6:] == "_SC_ID"], axis=1).values
 
-    # # Initiate progress
-    # prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
-    #
-    # # Use SC data where BL is null
-    # for subject in pd_control_data["PATNO"].unique():
-    #     if not pd_control_data[(pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "SC")].empty:
-    #         for column in pd_control_data.keys():
-    #             if (pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
-    #                         pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
-    #                     pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
-    #                                 pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
-    #                 pd_control_data.loc[
-    #                     (pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
-    #                     max(pd_control_data.loc[
-    #                             (pd_control_data["PATNO"] == subject) & (
-    #                                 pd_control_data["EVENT_ID"] == "SC"), column].tolist())
-    #     # Update progress
-    #     prog.update_progress()
+    # Initiate progress
+    prog = Progress(0, len(pd_control_data["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
+
+    # Use SC data where BL is null
+    for subject in pd_control_data["PATNO"].unique():
+        if not pd_control_data[(pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "SC")].empty:
+            for column in pd_control_data.keys():
+                if (pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
+                            pd_control_data["EVENT_ID"] == "BL"), column].isnull().values.all()) and (
+                        pd_control_data.loc[(pd_control_data["PATNO"] == subject) & (
+                                    pd_control_data["EVENT_ID"] == "SC"), column].notnull().values.any()):
+                    pd_control_data.loc[
+                        (pd_control_data["PATNO"] == subject) & (pd_control_data["EVENT_ID"] == "BL"), column] = \
+                        max(pd_control_data.loc[
+                                (pd_control_data["PATNO"] == subject) & (
+                                    pd_control_data["EVENT_ID"] == "SC"), column].tolist())
+        # Update progress
+        prog.update_progress()
 
     # Remove SC rows
     pd_control_data = pd_control_data[pd_control_data["EVENT_ID"] != "SC"]
@@ -429,6 +429,7 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     return model_results
 
 
+# Generate NP1, NP2, and NP3
 def generate_updrs_subsets(data, features):
     # set features
     new_features = ["NP1", "NP2", "NP3"]
@@ -445,6 +446,7 @@ def generate_updrs_subsets(data, features):
     return data
 
 
+# Generate time-related features
 def generate_time(data, features, id_name, time_name, datetime_name, birthday_name, diagnosis_date_name,
                   first_symptom_date_name, progress):
     # Set features
@@ -497,6 +499,7 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     return data
 
 
+# Generate future scores
 def generate_future_score(data, features, id_name, score_name, time_name, progress):
     # Set features
     new_features = ["SCORE_NOW", "TIME_NOW", "TIME_FUTURE", "TIME_PASSED", "SCORE_FUTURE"]
@@ -537,6 +540,7 @@ def generate_future_score(data, features, id_name, score_name, time_name, progre
     return new_data[(new_data["TIME_FUTURE"] >= 0) & (new_data["TIME_FUTURE"] <= 24)]
 
 
+# Generate time until symptom onsets
 def generate_time_until_symptom_onset(data, features, id_name, time_name, condition, progress):
     # Set features
     new_features = ["TIME_NOW", "TIME_OF_MILESTONE", "TIME_UNTIL_MILESTONE"]
@@ -585,6 +589,7 @@ def generate_time_until_symptom_onset(data, features, id_name, time_name, condit
     return new_data
 
 
+# Generate rates of progression
 def generate_rate_of_progression(data, features, id_name, time_name, score_name, progress):
     # Set features
     new_features = ["RATE_DISCRETE", "SCORE_NOW", "TIME_NOW"]
@@ -679,6 +684,7 @@ class Progress:
             print("")
 
 
+# Main method
 if __name__ == "__main__":
     # Set seed
     np.random.seed(0)
