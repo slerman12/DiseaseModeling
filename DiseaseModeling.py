@@ -3,6 +3,7 @@ import sys
 import numpy as np
 import pandas as pd
 from scipy import stats
+import statsmodels.api as sm
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import RandomForestClassifier
@@ -183,7 +184,7 @@ def process_data(data, model_type, patient_key, time_key, target, drop_predictor
 
 # Automatic feature and row elimination (automatically get rid of NAs and maximize data)
 def patient_and_feature_selection(data, patient_key, time_key, feature_elimination_n=None, drop_predictors=None,
-                                  add_predictors=None, print_results=False, data_filename="clean_data.csv"):
+                                  add_predictors=None, print_results=False, data_filename="disease_modeling_data.csv"):
     # Initialize drop/add predictors
     if drop_predictors is None:
         drop_predictors = []
@@ -218,7 +219,7 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
         # Return dimensions/d
         if test:
             # Return number of features * patients
-            return len(d[d[time_key] == 0]) * len(d.keys())
+            return len(d.keys()) * len(d[d[time_key] == 0])
         else:
             # Return d
             return d
@@ -288,10 +289,11 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     # Algorithms for model
     algs = [
         RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2,
-                              oob_score=True) if target != "RATE_DISCRETE" else RandomForestClassifier(n_estimators=500,
-                                                                                                       min_samples_split=25,
-                                                                                                       min_samples_leaf=2,
-                                                                                                       oob_score=True),
+                              oob_score=True) if target != "RATE_LINEAR_REGRESSION_DISCRETE" else RandomForestClassifier(
+                n_estimators=500,
+                min_samples_split=25,
+                min_samples_leaf=2,
+                oob_score=True),
         LogisticRegression(),
         SVC(probability=True),
         GaussianNB(),
@@ -326,7 +328,7 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     if grid_search_action:
         # Run grid search
         grid_search = mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                 scoring="r2" if target != "RATE_DISCRETE" else "accuracy",
+                                 scoring="r2" if target != "RATE_LINEAR_REGRESSION_DISCRETE" else "accuracy",
                                  grid_search_params=grid_search_params,
                                  output=True)["Grid Search Random Forest"].best_estimator_
 
@@ -376,7 +378,7 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     metrics["Cross Validation accuracy Random Forest"] = None
 
     # Metrics for classification
-    if target == "RATE_DISCRETE":
+    if target == "RATE_LINEAR_REGRESSION_DISCRETE":
         # Display classification accuracy
         metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                                   cross_val=[True], scoring="accuracy", description=None, output=not print_results))
@@ -592,16 +594,26 @@ def generate_time_until_symptom_onset(data, features, id_name, time_name, condit
 # Generate rates of progression
 def generate_rate_of_progression(data, features, id_name, time_name, score_name, progress):
     # Set features
-    new_features = ["RATE_DISCRETE", "SCORE_NOW", "TIME_NOW"]
+    new_features = ["RATE_LINEAR_REGRESSION_DISCRETE", "SCORE_NOW", "TIME_NOW"]
     for feature in new_features:
         if feature not in features:
             features.append(feature)
+
+    # Linear mixed-effects model w/ random slopes/random intercepts
+    lme = sm.MixedLM.from_formula("{} ~ {}".format(score_name, time_name), data, re_formula=time_name,
+                                  groups=data[id_name])
+
+    # Fit lme model
+    lme_result = lme.fit()
+
+    # Print results
+    print lme_result.random_effects
 
     # Create new dataframe
     new_data = pd.DataFrame(columns=features)
 
     # Initialize progress measures
-    prog = Progress(0, len(data.loc[data[time_name] >= 25, id_name].unique()), "Slopes", progress)
+    prog = Progress(0, len(data.loc[data[time_name] >= 25, id_name].unique()), "Rate Linear Regression", progress)
 
     # Iterate through patients who have more than 2 years of data
     for data_id in data.loc[data[time_name] >= 25, id_name].unique():
@@ -610,7 +622,7 @@ def generate_rate_of_progression(data, features, id_name, time_name, score_name,
 
         # Set row
         for a, b in data[(data[id_name] == data_id) & (data[time_name] == time_now)].iterrows():
-            row = b
+            row = b.copy()
 
         # Set score now
         score_now = row[score_name]
@@ -624,7 +636,7 @@ def generate_rate_of_progression(data, features, id_name, time_name, score_name,
             slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
 
             # Set features
-            row["RATE_DISCRETE"] = slope
+            row["RATE_LINEAR_REGRESSION_DISCRETE"] = slope
             row["TIME_NOW"] = time_now
             row["SCORE_NOW"] = score_now
 
@@ -638,20 +650,21 @@ def generate_rate_of_progression(data, features, id_name, time_name, score_name,
         prog.update_progress()
 
     # Remove nulls
-    new_data = new_data[new_data["RATE_DISCRETE"].notnull()]
+    new_data = new_data[new_data["RATE_LINEAR_REGRESSION_DISCRETE"].notnull()]
 
     # Set slope values
-    new_data["RATE_CONTINUOUS"] = new_data["RATE_DISCRETE"]
+    new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] = new_data["RATE_LINEAR_REGRESSION_DISCRETE"]
 
     # Get tertiles
-    tertile_1 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "RATE_CONTINUOUS"], 33 + 1 / 3)
-    tertile_2 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "RATE_CONTINUOUS"], 66 + 2 / 3)
+    tertile_1 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "RATE_LINEAR_REGRESSION_CONTINUOUS"], 33 + 1 / 3)
+    tertile_2 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "RATE_LINEAR_REGRESSION_CONTINUOUS"], 66 + 2 / 3)
 
     # Label slow, medium, and fast progression
-    new_data.loc[new_data["RATE_CONTINUOUS"] < tertile_1, "RATE_DISCRETE"] = 0
+    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_1, "RATE_LINEAR_REGRESSION_DISCRETE"] = 0
     new_data.loc[
-        (new_data["RATE_CONTINUOUS"] >= tertile_1) & (new_data["RATE_CONTINUOUS"] < tertile_2), "RATE_DISCRETE"] = 1
-    new_data.loc[new_data["RATE_CONTINUOUS"] >= tertile_2, "RATE_DISCRETE"] = 2
+        (new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_1) & (
+            new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_2), "RATE_LINEAR_REGRESSION_DISCRETE"] = 1
+    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_2, "RATE_LINEAR_REGRESSION_DISCRETE"] = 2
 
     # Return new data
     return new_data
@@ -689,7 +702,8 @@ if __name__ == "__main__":
     # Set seed
     np.random.seed(0)
 
-    # Data keys
+    # Data keys - patient key must be a numeric ID uniquely representing a patient. Time key must be a numeric unit of
+    # time from baseline such that the time at baseline equals 0.
     patient = "PATNO"
     time = "TIME_FROM_BL"
 
@@ -699,12 +713,18 @@ if __name__ == "__main__":
             "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
             "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "TIME_OF_MILESTONE",
             "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_CONTINUOUS",
+            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_LINEAR_REGRESSION_CONTINUOUS",
             "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL",
             "HAS_PD"]
 
     # Data specific operations
-    train = preprocess_data(target="TOTAL", cohorts=["CONTROL", "PD", "GRPD", "GCPD"], print_results=True)
+    # train = preprocess_data(target="TOTAL", cohorts=["CONTROL", "PD", "GRPD", "GCPD"], print_results=True)
+
+    # Retrieve preprocessed data from file
+    train = pd.read_csv("preprocessed_data.csv")
+
+    # Convert to correct dtypes
+    train[[patient, time]] = train[[patient, time]].apply(pd.to_numeric, errors="coerce")
 
     # Prepare data
     train = process_data(train, "Rate of Progression", patient, time, "TOTAL", drop, True)
@@ -713,18 +733,21 @@ if __name__ == "__main__":
     train = patient_and_feature_selection(train, patient, time, None, drop, None, True)
 
     # Univariate feature selection
-    mL.describe_data(data=train, univariate_feature_selection=[list(train.drop("RATE_DISCRETE", axis=1).columns.values),
-                                                               "RATE_DISCRETE"])
+    mL.describe_data(data=train, univariate_feature_selection=[
+        list(train.drop("RATE_LINEAR_REGRESSION_DISCRETE", axis=1).columns.values),
+        "RATE_LINEAR_REGRESSION_DISCRETE"])
 
     # Primary run of model
-    train = model(train, "Rate of Progression", "RATE_DISCRETE", patient, time, False,
+    train = model(train, "Rate of Progression", "RATE_LINEAR_REGRESSION_DISCRETE", patient, time, False,
                   [x for x in drop if x not in [patient, time]], None, 0.001, True, False)["Second Iteration Data"]
 
     # Maximize dimensions using only top predictors
     train = patient_and_feature_selection(train, patient, time, None, drop, None, True)
 
     # Run model using top predictors
-    estimator = model(train, "Rate of Progression", "RATE_DISCRETE", patient, time, False, drop, None)["Model"]
+    estimator = \
+        model(train, "Rate of Progression", "RATE_LINEAR_REGRESSION_DISCRETE", patient, time, False, drop, None)[
+            "Model"]
 
     # Convert to correct dtypes
     # train[[patient, time]] = train[[patient, time]].apply(pd.to_numeric, errors="coerce")
