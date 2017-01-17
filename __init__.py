@@ -1,5 +1,4 @@
 from flask import Flask
-import RandomForest
 
 app = Flask(__name__)
 

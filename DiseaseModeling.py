@@ -14,14 +14,42 @@ from sklearn.svm import SVC
 import MachineLearning as mL
 
 
+# Helper method for retrieving a pre-organized data set
+def retrieve_data(filename, keys):
+    # Retrieve preprocessed data from file
+    data = pd.read_csv(filename)
+
+    # Convert to correct dtypes
+    data[keys] = data[keys].apply(pd.to_numeric, errors="coerce")
+
+    # Return data
+    return data
+
+
+# TODO: Consider which categorical features can have NAs eliminated through binary dummies
 # Data specific operations (Merge into one file, generate time from baseline in months, standardize feature name/values)
-def preprocess_data(target, data_filename="preprocessed_data.csv", cohorts=None, print_results=False):
+def preprocess_data(model_type, target, data_filename="preprocessed_data.csv", cohorts=None, print_results=False):
     # Create the data frames from files
     with np.warnings.catch_warnings():
         np.warnings.simplefilter("ignore")
         all_patients = pd.read_csv("data/all_pats.csv")
         all_visits = pd.read_csv("data/all_visits.csv")
         all_updrs = pd.read_csv("data/all_updrs.csv")
+        updrs_part_iii = pd.read_csv("data/MDS_UPDRS_Part_III__Post_Dose_.csv")
+
+    # Include on/off data in the UPDRS data
+    all_updrs = all_updrs.merge(updrs_part_iii, how="left",
+                                on=["PATNO", "EVENT_ID", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU",
+                                    "NP3RIGLU", "PN3RIGRL", "NP3RIGLL", "NP3FTAPR", "NP3FTAPL", "NP3HMOVR",
+                                    "NP3HMOVL", "NP3PRSPR", "NP3PRSPL", "NP3TTAPR", "NP3TTAPL", "NP3LGAGR",
+                                    "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL", "NP3POSTR",
+                                    "NP3BRADY", "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU",
+                                    "NP3RTALU", "NP3RTARL", "NP3RTALL", "NP3RTALJ",
+                                    "NP3RTCON"])[["PATNO", "EVENT_ID", "TOTAL", "ANNUAL_TIME_BTW_DOSE_NUPDRS",
+                                                  "ON_OFF_DOSE", "PD_MED_USE"]]
+
+    # Create main all_updrs file
+    all_updrs.to_csv("data/all_updrs_main.csv", index=False)
 
     # Enrolled cohorts patients
     pd_control_patients = all_patients.loc[
@@ -30,12 +58,20 @@ def preprocess_data(target, data_filename="preprocessed_data.csv", cohorts=None,
 
     # Data for these patients
     pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)].merge(
-            all_updrs[["PATNO", "EVENT_ID", "TOTAL"]], on=["PATNO", "EVENT_ID"], how="left").merge(
+            all_updrs, on=["PATNO", "EVENT_ID", "ON_OFF_DOSE"], how="left").merge(
             all_patients, on="PATNO", how="left", suffixes=["_x", ""])
 
-    # Only include "off" data
+    # Only include "off" data (Exclude NUPDRS3A measurements and <6hrs since last PD med dose intake measurements)
     pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
+    pd_control_data = pd_control_data[pd_control_data["ON_OFF_DOSE"] != 2]
 
+    # Only include patients when they're not receiving symptomatic treatment
+    # pd_control_data = pd_control_data[pd_control_data["ON_OFF_DOSE"].isnull()]
+
+    # Make ON_OFF_DOSE binary dummies
+    pd_control_data = pd.get_dummies(pd_control_data, columns=["ON_OFF_DOSE"])
+
+    # TODO: Write more efficient code for using SC data where BL is null
     # # Merge SC data onto BL data
     # sc_bl_merge = pd_control_data[pd_control_data["EVENT_ID"] == "BL"].merge(
     #     pd_control_data[pd_control_data["EVENT_ID"] == "SC"], on="PATNO", how="left", suffixes=["", "_SC_ID"])
@@ -97,34 +133,47 @@ def preprocess_data(target, data_filename="preprocessed_data.csv", cohorts=None,
     features = list(pd_control_data.columns.values)
 
     # Generate features
-    generated_features = generate_updrs_subsets(data=pd_control_data, features=features)
-    generated_features = generate_time(data=generated_features, features=features, id_name="PATNO",
-                                       time_name="EVENT_ID", datetime_name="INFODT", birthday_name="BIRTHDT.x",
-                                       diagnosis_date_name="PDDXDT", first_symptom_date_name="SXDT",
-                                       progress=print_results)
+    data = generate_updrs_subsets(data=pd_control_data, features=features)
+    data = generate_time(data=data, features=features, id_name="PATNO",
+                         time_name="EVENT_ID", datetime_name="INFODT", birthday_name="BIRTHDT.x",
+                         diagnosis_date_name="PDDXDT", first_symptom_date_name="SXDT",
+                         progress=print_results)
+
+    # Model dependant preprocessing
+    if model_type == "Rate of Progression":
+        # Only include patients with more than two years of data
+        data = data[data["PATNO"].isin(data.loc[data["TIME_FROM_BL"] >= 24, "PATNO"].unique())]
+
+        # Only include first two years of data
+        data = data[data["TIME_FROM_BL"] <= 24]
+
+        # Only include patients with at least three observations
+        for subject in data["PATNO"].unique():
+            if len(data[data["PATNO"] == subject]) < 3:
+                data = data[data["PATNO"] != subject]
 
     # Print data diagnostics
     if print_results:
         # Data diagnostics after feature generation
-        mL.describe_data(data=generated_features, describe=True, description="AFTER DATA PREPROCESSING:")
+        mL.describe_data(data=data, describe=True, description="AFTER DATA PREPROCESSING:")
 
     # Create csv
-    generated_features.to_csv(data_filename, index=False)
+    data.to_csv(data_filename, index=False)
 
     # Return pd control data
-    return generated_features
+    return data
 
 
 # Drop patients w/o BL, drop rows w/ NA at key features, create binary dummies, generate features, targets, and data set
-def process_data(data, model_type, patient_key, time_key, target, drop_predictors=None, print_results=False,
-                 data_filename="processed_data.csv", symptom_features_values=None):
+def process_data(data, model_type, patient_key, time_key, base_target, primary_target, drop_predictors=None,
+                 print_results=False, data_filename="processed_data.csv", symptom_features_values=None):
     # Model type booleans
     future_score = model_type == "Future Score"
     rate_of_progression = model_type == "Rate of Progression"
     time_until_symptom_onset = model_type == "Time Until Symptom Onset"
 
     # Target features
-    data_targets = [target] if future_score or rate_of_progression else [
+    data_targets = [base_target] if future_score or rate_of_progression else [
         x[0] for x in symptom_features_values] if time_until_symptom_onset else []
 
     # Drop patients without BL data
@@ -153,7 +202,7 @@ def process_data(data, model_type, patient_key, time_key, target, drop_predictor
     # Feature generation
     if future_score:
         # Generate new data set for predicting future visits
-        data = generate_future_score(data=data, features=features, id_name=patient_key, score_name=target,
+        data = generate_future_score(data=data, features=features, id_name=patient_key, score_name=base_target,
                                      time_name=time_key, progress=print_results)
     elif time_until_symptom_onset:
         # Generate new data set for predicting future milestones
@@ -161,13 +210,13 @@ def process_data(data, model_type, patient_key, time_key, target, drop_predictor
                                                  condition=symptom_onset_criteria, progress=print_results)
     elif rate_of_progression:
         # Generate new data set for predicting rate of progression
-        data = generate_rate_of_progression(data=data, features=features, id_name=patient_key, score_name=target,
+        data = generate_rate_of_progression(data=data, features=features, id_name=patient_key, score_name=base_target,
                                             time_name=time_key, progress=print_results)
 
     # Drop unused columns
     for column in data.keys():
         if column in drop_predictors:
-            if column != patient_key and column != time_key:
+            if column != patient_key and column != time_key and column != primary_target:
                 data = data.drop(column, 1)
 
     # Print data diagnostics
@@ -182,8 +231,9 @@ def process_data(data, model_type, patient_key, time_key, target, drop_predictor
     return data
 
 
+# TODO: Truly maximize by searching space of all feature/patient NA-less combinations
 # Automatic feature and row elimination (automatically get rid of NAs and maximize data)
-def patient_and_feature_selection(data, patient_key, time_key, feature_elimination_n=None, drop_predictors=None,
+def patient_and_feature_selection(data, patient_key, time_key, target, feature_elimination_n=None, drop_predictors=None,
                                   add_predictors=None, print_results=False, data_filename="disease_modeling_data.csv"):
     # Initialize drop/add predictors
     if drop_predictors is None:
@@ -194,11 +244,11 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
     # Drop unused columns
     for column in data.keys():
         if column in drop_predictors:
-            if column != patient_key and column != time_key:
+            if column != patient_key and column != time_key and column != target:
                 data = data.drop(column, 1)
 
     # Eliminate features with more than n (%) NA at BL and then drop patients with NAs at BL
-    def feature_row_elimination(n, test=False, progress=False):
+    def feature_row_elimination(n, test=False):
         # Make a copy of the data
         d = data.copy()
 
@@ -232,16 +282,16 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
                 len(data.keys())))
 
     # Initiate progress
-    prog = Progress(0, 39, "Feature/Row Elimination", print_results)
+    prog = Progress(0, 41, "Feature/Row Elimination", print_results)
 
     # Find optimal feature elimination n
     if feature_elimination_n is None:
         feature_elimination_n = max([x / 1000 for x in range(0, 1000, 25)],
-                                    key=lambda n: feature_row_elimination(n, True, True))
+                                    key=lambda n: feature_row_elimination(n, True))
 
         # Print optimal feature elimination n
         if print_results:
-            print("\rFeature Elimination N: {}\n".format(feature_elimination_n))
+            print("\rFeature Elimination N: {}".format(feature_elimination_n))
 
     # Perform automatic feature/row elimination
     data = feature_row_elimination(feature_elimination_n)
@@ -261,7 +311,7 @@ def patient_and_feature_selection(data, patient_key, time_key, feature_eliminati
 
 
 # Train and optimize a model with grid search
-def model(data, model_type, target, patient_key, time_key, grid_search_action=False,
+def model(data, model_type, target, patient_key, time_key, grid_search_action=False, regression=True,
           drop_predictors=None, add_predictors=None, feature_importance_n=0.1, print_results=True,
           output_results=True, results_filename="results.csv"):
     # Initialize drop/add predictors
@@ -270,16 +320,19 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     if add_predictors is None:
         add_predictors = []
 
+    # Initialize training data
+    training_data = data.copy()
+
     # Drop unused columns
-    for column in data.keys():
-        if column in drop_predictors:
-            data = data.drop(column, 1)
+    for column in training_data.keys():
+        if column in drop_predictors or column in [target]:
+            training_data = training_data.drop(column, 1)
 
     # Initialize output
     model_results = {}
 
     # List of predictors
-    predictors = list(data.drop(target, axis=1).columns.values)
+    predictors = list(training_data.columns.values)
 
     # Parameters for grid search
     grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
@@ -289,11 +342,10 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     # Algorithms for model
     algs = [
         RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2,
-                              oob_score=True) if target != "RATE_LINEAR_REGRESSION_DISCRETE" else RandomForestClassifier(
-                n_estimators=500,
-                min_samples_split=25,
-                min_samples_leaf=2,
-                oob_score=True),
+                              oob_score=True) if regression else RandomForestClassifier(n_estimators=500,
+                                                                                        min_samples_split=25,
+                                                                                        min_samples_leaf=2,
+                                                                                        oob_score=True),
         LogisticRegression(),
         SVC(probability=True),
         GaussianNB(),
@@ -312,7 +364,6 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
                  "kNN",
                  "Gradient Boosting"]
 
-    # TODO: Configure ensemble
     # Ensemble
     ens = mL.ensemble(algs=algs, alg_names=alg_names,
                       ensemble_name="Weighted ensemble of RF, LR, SVM, GNB, KNN, and GB",
@@ -327,23 +378,24 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     # If grid search needs to be run
     if grid_search_action:
         # Run grid search
-        grid_search = mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                 scoring="r2" if target != "RATE_LINEAR_REGRESSION_DISCRETE" else "accuracy",
-                                 grid_search_params=grid_search_params,
-                                 output=True)["Grid Search Random Forest"].best_estimator_
+        grid_search = \
+            mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                       scoring="r2" if regression else "accuracy",
+                       grid_search_params=grid_search_params,
+                       print_results=False)["Grid Search Random Forest"].best_estimator_
 
         # Set algorithm to grid search estimator
         algs[0] = grid_search
 
     # Get feature importances
     feature_importances = mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
-                                     alg_names=alg_names, feature_importances=[True], output=True,
+                                     alg_names=alg_names, feature_importances=[True], print_results=False,
                                      description=None)["Feature Importances Random Forest"]
 
     # Set important features as top predictors
     top_predictors = [x for x, y in feature_importances if y >= feature_importance_n]
 
-    # TODO: Perhaps include ability to eliminate linear dependencies?
+    # # Ability to eliminate linear dependencies
     # # Feature importance dictionary
     # fid = {}
     # for x, y in feature_importances:
@@ -362,30 +414,35 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     # Display metrics, including r2 score
     metrics = mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                          feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
-                         scoring="r2", output=not print_results)
+                         scoring="r2", print_results=print_results)
 
     # Display mean absolute error score
     metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                               cross_val=[True], scoring="mean_absolute_error", description=None,
-                              output=not print_results))
+                              print_results=print_results))
 
     # Display root mean squared error score
     metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
                               cross_val=[True],
                               scoring="root_mean_squared_error", description=None,
-                              output=not print_results))
+                              print_results=print_results))
 
     metrics["Cross Validation accuracy Random Forest"] = None
 
     # Metrics for classification
-    if target == "RATE_LINEAR_REGRESSION_DISCRETE":
+    if not regression:
         # Display classification accuracy
-        metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                                  cross_val=[True], scoring="accuracy", description=None, output=not print_results))
+        metrics.update(
+                mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                           cross_val=[True], scoring="accuracy", description=None, print_results=print_results))
+
+        # Display classification report
+        mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                   split_classification_report=[True], description=None, print_results=print_results)
 
         # Display confusion matrix
         mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                   split_confusion_matrix=[True], description=None, output=not print_results)
+                   split_confusion_matrix=[True], description=None, print_results=print_results)
 
     # If grid search results, print results
     if print_results and grid_search_action:
@@ -457,7 +514,6 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
         if feature not in features:
             features.append(feature)
 
-    # TODO: Interpolate based on time
     # Drop rows with no date time
     data = data[data[datetime_name].notnull()]
 
@@ -594,7 +650,8 @@ def generate_time_until_symptom_onset(data, features, id_name, time_name, condit
 # Generate rates of progression
 def generate_rate_of_progression(data, features, id_name, time_name, score_name, progress):
     # Set features
-    new_features = ["RATE_LINEAR_REGRESSION_DISCRETE", "SCORE_NOW", "TIME_NOW"]
+    new_features = ["RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_SLOW", "RATE_LME_INCLUSION/EXCLUSION_FAST"
+                                                                                "SCORE_NOW", "TIME_NOW"]
     for feature in new_features:
         if feature not in features:
             features.append(feature)
@@ -604,70 +661,100 @@ def generate_rate_of_progression(data, features, id_name, time_name, score_name,
                                   groups=data[id_name])
 
     # Fit lme model
-    lme_result = lme.fit()
+    lme_fit = lme.fit()
 
-    # Print results
-    print lme_result.random_effects
+    # Lme results
+    lme_result = lme_fit.random_effects.drop("Intercept", 1)
 
-    # Create new dataframe
-    new_data = pd.DataFrame(columns=features)
-
-    # Initialize progress measures
-    prog = Progress(0, len(data.loc[data[time_name] >= 25, id_name].unique()), "Rate Linear Regression", progress)
-
-    # Iterate through patients who have more than 2 years of data
-    for data_id in data.loc[data[time_name] >= 25, id_name].unique():
-        # Set time now
-        time_now = 0
-
-        # Set row
-        for a, b in data[(data[id_name] == data_id) & (data[time_name] == time_now)].iterrows():
-            row = b.copy()
-
-        # Set score now
-        score_now = row[score_name]
-
-        # Variables for linear regression such that only first 24 months are used
-        x = data.loc[(data[id_name] == data_id) & (data[time_name] <= 25), score_name]
-        y = data.loc[(data[id_name] == data_id) & (data[time_name] <= 25), time_name]
-
-        # Linear regression
-        if any(x) and any(y):
-            slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-
-            # Set features
-            row["RATE_LINEAR_REGRESSION_DISCRETE"] = slope
-            row["TIME_NOW"] = time_now
-            row["SCORE_NOW"] = score_now
-
-            # Add row to new_data
-            if not math.isnan(new_data.index.max()):
-                new_data.loc[new_data.index.max() + 1] = row[features]
-            else:
-                new_data.loc[0] = row[features]
-
-        # Update progress
-        prog.update_progress()
-
-    # Remove nulls
-    new_data = new_data[new_data["RATE_LINEAR_REGRESSION_DISCRETE"].notnull()]
-
-    # Set slope values
-    new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] = new_data["RATE_LINEAR_REGRESSION_DISCRETE"]
+    # Rename lme rate
+    lme_result.rename(columns={time_name: "RATE_LME_CONTINUOUS"}, inplace=True)
 
     # Get tertiles
-    tertile_1 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "RATE_LINEAR_REGRESSION_CONTINUOUS"], 33 + 1 / 3)
-    tertile_2 = np.percentile(new_data.loc[new_data["HAS_PD"] == 1, "RATE_LINEAR_REGRESSION_CONTINUOUS"], 66 + 2 / 3)
+    lme_tertile_1 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 33 + 1 / 3)
+    lme_tertile_2 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 66 + 2 / 3)
 
-    # Label slow, medium, and fast progression
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_1, "RATE_LINEAR_REGRESSION_DISCRETE"] = 0
-    new_data.loc[
-        (new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_1) & (
-            new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_2), "RATE_LINEAR_REGRESSION_DISCRETE"] = 1
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_2, "RATE_LINEAR_REGRESSION_DISCRETE"] = 2
+    if progress:
+        print "SLOW/MODERATE CUTOFF: {}".format(lme_tertile_1)
+        print "MODERATE/FAST CUTOFF: {}".format(lme_tertile_2)
 
-    # Return new data
-    return new_data
+    # Label fast and not fast progression
+    lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
+    lme_result.loc[
+        (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
+            lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
+    lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 1
+
+    # Label slow and not slow progression
+    lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 0
+    lme_result.loc[
+        (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
+            lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
+    lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
+
+    # Merge baseline data w/ lme results
+    lme_data = data[data[time_name] == 0].merge(lme_result, how="left", left_on=[id_name], right_index=True)
+
+    return lme_data
+
+    # # Create new dataframe
+    # new_data = pd.DataFrame(columns=features)
+    #
+    # # Initialize progress measures
+    # prog = Progress(0, len(data.loc[data[time_name] >= 25, id_name].unique()), "Rate Linear Regression", progress)
+    #
+    # # Iterate through patients (who should have more than 2 years of data)
+    # for data_id in data[id_name].unique():
+    #     # Set time now
+    #     time_now = 0
+    #
+    #     # Set row
+    #     for a, b in data[(data[id_name] == data_id) & (data[time_name] == time_now)].iterrows():
+    #         row = b.copy()
+    #
+    #     # Set score now
+    #     score_now = row[score_name]
+    #
+    #     # Variables for linear regression such that only first 24 months are used
+    #     x = data.loc[(data[id_name] == data_id) & (data[time_name] <= 25), score_name]
+    #     y = data.loc[(data[id_name] == data_id) & (data[time_name] <= 25), time_name]
+    #
+    #     # Linear regression
+    #     if any(x) and any(y):
+    #         slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+    #
+    #         # Set features
+    #         row["RATE_LINEAR_REGRESSION_DISCRETE"] = slope
+    #         row["TIME_NOW"] = time_now
+    #         row["SCORE_NOW"] = score_now
+    #
+    #         # Add row to new_data
+    #         if not math.isnan(new_data.index.max()):
+    #             new_data.loc[new_data.index.max() + 1] = row[features]
+    #         else:
+    #             new_data.loc[0] = row[features]
+    #
+    #     # Update progress
+    #     prog.update_progress()
+    #
+    # # Remove nulls
+    # new_data = new_data[new_data["RATE_LINEAR_REGRESSION_DISCRETE"].notnull()]
+    #
+    # # Set slope values
+    # new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] = new_data["RATE_LINEAR_REGRESSION_DISCRETE"]
+    #
+    # # Get tertiles
+    # tertile_1 = np.percentile(new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"], 33 + 1 / 3)
+    # tertile_2 = np.percentile(new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"], 66 + 2 / 3)
+    #
+    # # Label slow, medium, and fast progression
+    # new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_1, "RATE_LINEAR_REGRESSION_DISCRETE"] = 0
+    # new_data.loc[
+    #     (new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_1) & (
+    #         new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_2), "RATE_LINEAR_REGRESSION_DISCRETE"] = 0
+    # new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_2, "RATE_LINEAR_REGRESSION_DISCRETE"] = 1
+    #
+    # # Return new data
+    # return new_data
 
 
 # Display progress in console
@@ -702,52 +789,60 @@ if __name__ == "__main__":
     # Set seed
     np.random.seed(0)
 
-    # Data keys - patient key must be a numeric ID uniquely representing a patient. Time key must be a numeric unit of
-    # time from baseline such that the time at baseline equals 0.
+    # Patient key: numeric IDs uniquely representing patients
     patient = "PATNO"
+
+    # Time key: numeric unit of time from baseline where time at baseline = 0
     time = "TIME_FROM_BL"
 
-    # Don't use these predictors
-    drop = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE",
-            "PRIMDIAG", "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE",
-            "ENROLL_CAT", "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO",
-            "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE", "TIME_OF_MILESTONE",
-            "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+    # Model type (options: "Future Score", "Rate of Progression", "Time Until Symptom Onset")
+    mt = "Rate of Progression"
+
+    # Model regression or classification (True for regression, False for classification)
+    regressor = False
+
+    # Base target (example: "TOTAL")
+    target_base = "TOTAL"
+
+    # Target (some examples: "SCORE_FUTURE", "TIME_UNTIL_MILESTONE", "RATE_LME_INCLUSION/EXCLUSION_FAST")
+    target_primary = "RATE_LME_INCLUSION/EXCLUSION_FAST"
+
+    # Features not to use as predictors
+    drop = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "INFODT_2", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG",
+            "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
+            "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE",
+            "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
             "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_LINEAR_REGRESSION_CONTINUOUS",
-            "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL",
-            "HAS_PD"]
+            "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL", "HAS_PD", "TOTAL",
+            "RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_SLOW"]
 
     # Data specific operations
-    # train = preprocess_data(target="TOTAL", cohorts=["CONTROL", "PD", "GRPD", "GCPD"], print_results=True)
+    # train = preprocess_data(mt, target=target_base, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
+    #                         data_filename="preprocessed_data_rate_of_progression.csv")
 
-    # Retrieve preprocessed data from file
-    train = pd.read_csv("preprocessed_data.csv")
-
-    # Convert to correct dtypes
-    train[[patient, time]] = train[[patient, time]].apply(pd.to_numeric, errors="coerce")
+    # Retrieve pre-organized data
+    train = retrieve_data("preprocessed_data_rate_of_progression.csv", [patient, time])
 
     # Prepare data
-    train = process_data(train, "Rate of Progression", patient, time, "TOTAL", drop, True)
+    train = process_data(train, mt, patient, time, target_base, target_primary, drop, True,
+                         data_filename="processed_data_rate_of_progression.csv")
 
     # Maximize data dimensions w/o NAs
-    train = patient_and_feature_selection(train, patient, time, None, drop, None, True)
+    train = patient_and_feature_selection(train, patient, time, target_primary, None, drop, None, True,
+                                          data_filename="disease_modeling_data_rate_of_progression.csv")
 
     # Univariate feature selection
-    mL.describe_data(data=train, univariate_feature_selection=[
-        list(train.drop("RATE_LINEAR_REGRESSION_DISCRETE", axis=1).columns.values),
-        "RATE_LINEAR_REGRESSION_DISCRETE"])
+    mL.describe_data(data=train, univariate_feature_selection=[list(train.drop(target_primary, axis=1).columns.values),
+                                                               target_primary])
 
     # Primary run of model
-    train = model(train, "Rate of Progression", "RATE_LINEAR_REGRESSION_DISCRETE", patient, time, False,
-                  [x for x in drop if x not in [patient, time]], None, 0.001, True, False)["Second Iteration Data"]
+    train = \
+        model(train, mt, target_primary, patient, time, False, regressor, [x for x in drop if x not in [patient, time]],
+              None, 0.001, True, False)["Second Iteration Data"]
 
     # Maximize dimensions using only top predictors
-    train = patient_and_feature_selection(train, patient, time, None, drop, None, True)
+    train = patient_and_feature_selection(train, patient, time, target_primary, None, drop, None, True,
+                                          data_filename="disease_modeling_data_rate_of_progression.csv")
 
     # Run model using top predictors
-    estimator = \
-        model(train, "Rate of Progression", "RATE_LINEAR_REGRESSION_DISCRETE", patient, time, False, drop, None)[
-            "Model"]
-
-    # Convert to correct dtypes
-    # train[[patient, time]] = train[[patient, time]].apply(pd.to_numeric, errors="coerce")
+    estimator = model(train, mt, target_primary, patient, time, False, regressor, drop, None)["Model"]

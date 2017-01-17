@@ -96,10 +96,10 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
 
 def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
             cross_val=None, folds=5, scoring="accuracy", split_accuracy=None, split_classification_report=None,
-            split_confusion_matrix=None, plot=True, grid_search_params=None, output=False, feature_dictionary=None,
-            description="METRICS:"):
-    # Output list
-    output_set = {}
+            split_confusion_matrix=None, plot=True, grid_search_params=None, print_results=False,
+            feature_dictionary=None, description="METRICS:"):
+    # Output dictionary
+    output_dict = {}
 
     # Feature importances
     def print_feature_importances(alg, name):
@@ -108,9 +108,8 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
             fi = zip(dictionary(predictors), alg.feature_importances_)
         else:
             fi = zip(predictors, alg.feature_importances_)
-        if output:
-            output_set["Feature Importances " + name] = sorted(fi, key=lambda x: x[1])
-        else:
+        output_dict["Feature Importances " + name] = sorted(fi, key=lambda x: x[1])
+        if print_results:
             print("Feature Importances [" + name + "]")
             for feature, imp in sorted(fi, key=lambda x: x[1]):
                 print(feature, imp)
@@ -127,17 +126,15 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     # Base score estimate
     def print_base_score(alg, name):
         score = alg.score(data[predictors], data[target])
-        if output:
-            output_set["Base Score " + name] = score
-        else:
+        output_dict["Base Score " + name] = score
+        if print_results:
             print("Base Score: {} [{}]".format(score, name))
 
     # Out of bag estimate
     def print_oob_score(alg, name):
         score = alg.oob_score_
-        if output:
-            output_set["OOB Score " + name] = score
-        else:
+        output_dict["OOB Score " + name] = score
+        if print_results:
             print("OOB Score: {} [{}]".format(score, name))
 
     # Cross validation
@@ -146,19 +143,17 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         if scoring == "root_mean_squared_error":
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds,
                                                       scoring="mean_squared_error")
-            if output:
-                output_set["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
+            output_dict["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
                     abs(scores.mean()) ** 0.5, scores.std() ** 0.5)
-            else:
+            if print_results:
                 print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()) ** 0.5,
                                                                                  scores.std() ** 0.5, name, scoring))
         else:
             scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
-            if output:
-                output_set["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
+            output_dict["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
                     abs(scores.mean()),
                     scores.std())
-            else:
+            if print_results:
                 print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()), scores.std(), name,
                                                                                  scoring))
 
@@ -225,21 +220,20 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                 plot_confusion_matrix(cm_normalized, title="Normalized Confusion Matrix\n[{}]".format(name))
 
             # Show confusion matrix plots
-            plt.show(block=False)
+            plt.show()
 
-# Grid search
+    # Grid search
     def print_grid_search(alg, name, params):
         # Run grid search
         if scoring == "root_mean_squared_error":
-            if output:
-                grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring="mean_squared_error",
-                                           verbose=0 if output else 1)
+            grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring="mean_squared_error",
+                                       verbose=1 if print_results else 0)
         else:
             grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring=scoring,
-                                       verbose=0 if output else 1)
+                                       verbose=1 if print_results else 0)
         grid_search.fit(data[predictors], data[target])
 
-        if not output:
+        if print_results:
             # Print algorithm being grid searched
             print("Grid Search [{}]".format(name))
             # Print best parameters and score
@@ -249,20 +243,20 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
             else:
                 print("Cross Validation: {} ({})".format(abs(grid_search.best_score_), scoring))
         else:
-            output_set["Grid Search " + name] = grid_search
+            output_dict["Grid Search " + name] = grid_search
             grid_search_string = "Grid Search [{}]\n{}\nCross Validation: {} ({})"
             if scoring == "root_mean_squared_error":
-                output_set["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
-                                                                                     abs(
-                                                                                         grid_search.best_score_) ** 0.5,
-                                                                                     scoring)
+                output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
+                                                                                      abs(
+                                                                                              grid_search.best_score_) ** 0.5,
+                                                                                      scoring)
             else:
-                output_set["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
-                                                                                     abs(grid_search.best_score_),
-                                                                                     scoring)
+                output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
+                                                                                      abs(grid_search.best_score_),
+                                                                                      scoring)
 
     # Print description of metrics
-    if (not output) and (description is not None):
+    if print_results and (description is not None):
         print("\n" + description)
 
     # Fit algorithms /just once/ for base score and oob score (as opposed to redundantly refitting)
@@ -294,25 +288,25 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
     # Call respective methods
     if feature_importances is not None:
-        if not output:
+        if print_results:
             print("")
         for i, val in enumerate(feature_importances):
             if val:
                 print_feature_importances(algs[i], alg_names[i])
     if base_score is not None:
-        if not output:
+        if print_results:
             print("")
         for i, val in enumerate(base_score):
             if val:
                 print_base_score(algs[i], alg_names[i])
     if oob_score is not None:
-        if not output:
+        if print_results:
             print("")
         for i, val in enumerate(oob_score):
             if val:
                 print_oob_score(algs[i], alg_names[i])
     if cross_val is not None:
-        if not output:
+        if print_results:
             print("")
         for i, val in enumerate(cross_val):
             if val:
@@ -329,19 +323,19 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
         # Call respective methods
         if split_accuracy:
-            if not output:
+            if print_results:
                 print("")
             for i, val in enumerate(split_accuracy):
                 if val:
                     print_split_accuracy(algs[i], alg_names[i], split_name, X_train, X_test, y_train, y_test)
         if split_classification_report:
-            if not output:
+            if print_results:
                 print("")
             for i, val in enumerate(split_classification_report):
                 if val:
                     print_split_classification_report(algs[i], alg_names[i], X_train, X_test, y_train, y_test)
         if split_confusion_matrix:
-            if not output:
+            if print_results:
                 print("")
             for i, val in enumerate(split_confusion_matrix):
                 if val:
@@ -349,14 +343,14 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
 
     # Finish calling respective methods
     if grid_search_params is not None:
-        if not output:
+        if print_results:
             print("")
         for i, val in enumerate(grid_search_params):
             if val is not None:
                 print_grid_search(algs[i], alg_names[i], val)
 
     # Return output
-    return output_set
+    return output_dict
 
 
 def ensemble(algs, alg_names, ensemble_name=None, in_ensemble=None, weights=None, voting="soft"):
