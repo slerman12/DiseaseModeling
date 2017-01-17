@@ -58,8 +58,8 @@ def preprocess_data(model_type, target, data_filename="preprocessed_data.csv", c
 
     # Data for these patients
     pd_control_data = all_visits[all_visits["PATNO"].isin(pd_control_patients)].merge(
-            all_updrs, on=["PATNO", "EVENT_ID", "ON_OFF_DOSE"], how="left").merge(
-            all_patients, on="PATNO", how="left", suffixes=["_x", ""])
+        all_updrs, on=["PATNO", "EVENT_ID", "ON_OFF_DOSE"], how="left").merge(
+        all_patients, on="PATNO", how="left", suffixes=["_x", ""])
 
     # Only include "off" data (Exclude NUPDRS3A measurements and <6hrs since last PD med dose intake measurements)
     pd_control_data = pd_control_data[pd_control_data["PAG_UPDRS3"] == "NUPDRS3"]
@@ -127,7 +127,7 @@ def preprocess_data(model_type, target, data_filename="preprocessed_data.csv", c
                                                                         (pd_control_data["EVENT_ID"] == 0) & (
                                                                             pd_control_data[
                                                                                 feature_keys].notnull().all(
-                                                                                    axis=1)), "PATNO"])]
+                                                                                axis=1)), "PATNO"])]
 
     # List of features
     features = list(pd_control_data.columns.values)
@@ -176,6 +176,9 @@ def process_data(data, model_type, patient_key, time_key, base_target, primary_t
     data_targets = [base_target] if future_score or rate_of_progression else [
         x[0] for x in symptom_features_values] if time_until_symptom_onset else []
 
+    # Drop any observations before baseline
+    data = data[data[time_key] >= 0]
+
     # Drop patients without BL data
     for patno in data[patient_key].unique():
         if patno not in data.loc[data[time_key] == 0, patient_key].unique():
@@ -188,7 +191,7 @@ def process_data(data, model_type, patient_key, time_key, base_target, primary_t
     # Convert categorical data to binary dummy columns
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
     dummy_features = [item for item in data.columns.values if item not in list(
-            data.select_dtypes(include=numerics).columns.values) + drop_predictors]
+        data.select_dtypes(include=numerics).columns.values) + drop_predictors]
     data = pd.get_dummies(data, columns=dummy_features)
 
     # List of features
@@ -210,8 +213,8 @@ def process_data(data, model_type, patient_key, time_key, base_target, primary_t
                                                  condition=symptom_onset_criteria, progress=print_results)
     elif rate_of_progression:
         # Generate new data set for predicting rate of progression
-        data = generate_rate_of_progression(data=data, features=features, id_name=patient_key, score_name=base_target,
-                                            time_name=time_key, target=primary_target, progress=print_results)
+        data = generate_rate_of_progression(data=data, id_name=patient_key, score_name=base_target, time_name=time_key,
+                                            target=primary_target, progress=print_results)
 
     # Drop unused columns
     for column in data.keys():
@@ -255,13 +258,13 @@ def patient_and_feature_selection(data, patient_key, time_key, target, feature_e
         # Eliminate features with more than n (%) NA at BL
         for col in d.keys():
             if col not in add_predictors:
-                if d.loc[d[time_key] == 0, col].isnull().sum().astype(float) / len(
+                if d.loc[d[time_key] == 0, col].isnull().values.sum().astype(float) / len(
                         d[d[time_key] == 0]) > n:
                     d = d.drop(col, 1)
 
         # Drop patients with NAs at BL
         d = d[d[patient_key].isin(
-                d.loc[(d[time_key] == 0) & (d.notnull().all(axis=1)), patient_key])]
+            d.loc[(d[time_key] == 0) & (d.notnull().all(axis=1)), patient_key])]
 
         # Display progress
         prog.update_progress()
@@ -278,8 +281,8 @@ def patient_and_feature_selection(data, patient_key, time_key, target, feature_e
     if print_results:
         # Print number patients and features before feature elimination
         print("BEFORE FEATURE/ROW ELIMINATION: Patients: {}, Features: {}".format(
-                len(data[patient_key].unique()),
-                len(data.keys())))
+            len(data[patient_key].unique()),
+            len(data.keys())))
 
     # Initiate progress
     prog = Progress(0, 41, "Feature/Row Elimination", print_results)
@@ -300,8 +303,8 @@ def patient_and_feature_selection(data, patient_key, time_key, target, feature_e
     if print_results:
         # Print number patients and features after feature elimination
         print("AFTER FEATURE/ROW ELIMINATION: Patients: {}, Features: {}".format(
-                len(data[patient_key].unique()),
-                len(data.keys())))
+            len(data[patient_key].unique()),
+            len(data.keys())))
 
     # Create csv
     data.to_csv(data_filename, index=False)
@@ -437,9 +440,9 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     if not regression:
         # Display classification accuracy
         metrics.update(
-                mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
-                           alg_names=alg_names,
-                           cross_val=[True], scoring="accuracy", description=None, print_results=print_results))
+            mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
+                       alg_names=alg_names,
+                       cross_val=[True], scoring="accuracy", description=None, print_results=print_results))
 
         # Display classification report
         mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
@@ -457,14 +460,12 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     # Output results file
     if output_results:
         # Create blank results csv
-        pd.DataFrame(columns=["model type" "target", "base", "oob", "r2", "mes", "rmse", "accuracy",
+        pd.DataFrame(columns=["model type", "target", "base", "oob", "r2", "mes", "rmse", "accuracy",
                               "features", "importances"]).to_csv(results_filename, index=False)
 
         # Create results data frame
         results = pd.DataFrame(
-                columns=["model type" "target", "base", "oob", "r2", "mes", "rmse", "accuracy",
-                         "features",
-                         "importances"])
+            columns=["model type" "target", "base", "oob", "r2", "mes", "rmse", "accuracy", "features", "importances"])
         results.loc[0, "model type"] = model_type
         results.loc[0, "target"] = target
         results.loc[0, "base"] = metrics["Base Score Random Forest"]
@@ -545,7 +546,7 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+            lambda x: int((x / np.timedelta64(1, 'D')) / 30))
 
         # Update progress
         prog.update_progress()
@@ -554,10 +555,10 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
     data.loc[data["HAS_PD"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
         data.loc[data["HAS_PD"] == 1, datetime_name] - data.loc[data["HAS_PD"] == 1, diagnosis_date_name]).apply(
-            lambda x: (x / np.timedelta64(1, 'D')) / 30)
+        lambda x: (x / np.timedelta64(1, 'D')) / 30)
     data.loc[data["HAS_PD"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
         data.loc[data["HAS_PD"] == 1, datetime_name] - data.loc[data["HAS_PD"] == 1, first_symptom_date_name]).apply(
-            lambda x: (x / np.timedelta64(1, 'D')) / 30)
+        lambda x: (x / np.timedelta64(1, 'D')) / 30)
 
     # Return data
     return data
@@ -630,7 +631,7 @@ def generate_time_until_symptom_onset(data, features, id_name, time_name, condit
         if time_now == 0 and any(data.loc[(data[id_name] == data_id) & (condition(data)), time_name]):
             # Time of milestone
             time_of_milestone = data.loc[(data[id_name] == data_id) & (condition(
-                    data)), time_name].min()
+                data)), time_name].min()
 
             # Time until milestone from time now
             time_until_milestone = time_of_milestone - time_now
@@ -654,19 +655,12 @@ def generate_time_until_symptom_onset(data, features, id_name, time_name, condit
 
 
 # Generate rates of progression
-def generate_rate_of_progression(data, features, id_name, time_name, score_name, target, progress):
+def generate_rate_of_progression(data, id_name, time_name, score_name, target, progress):
     # If linear mixed effects model
     if target == "RATE_LME_CONTINUOUS" \
             or target == "RATE_LME_INCLUSION/EXCLUSION_SLOW" \
             or target == "RATE_LME_INCLUSION/EXCLUSION_FAST" \
             or target == "RATE_LME_DISCRETE":
-        # Set features
-        new_features = ["RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_SLOW", "RATE_LME_INCLUSION/EXCLUSION_FAST"
-                        "RATE_LME_DISCRETE", "SCORE_NOW", "TIME_NOW"]
-        for feature in new_features:
-            if feature not in features:
-                features.append(feature)
-
         # Linear mixed-effects model w/ random slopes/random intercepts
         lme = sm.MixedLM.from_formula("{} ~ {}".format(score_name, time_name), data, re_formula=time_name,
                                       groups=data[id_name])
@@ -684,6 +678,7 @@ def generate_rate_of_progression(data, features, id_name, time_name, score_name,
         lme_tertile_1 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 33 + 1 / 3)
         lme_tertile_2 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 66 + 2 / 3)
 
+        # Print classification cutoffs
         if progress:
             print("SLOW/MODERATE CUTOFF: {}".format(lme_tertile_1))
             print("MODERATE/FAST CUTOFF: {}".format(lme_tertile_2))
@@ -710,94 +705,71 @@ def generate_rate_of_progression(data, features, id_name, time_name, score_name,
         lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
 
         # Merge baseline data w/ lme results
-        lme_data = data[data[time_name] == 0].merge(lme_result, how="left", left_on=[id_name], right_index=True)
+        data = data[data[time_name] == 0].merge(lme_result, how="left", left_on=[id_name], right_index=True)
 
-        return lme_data
+        # Return data
+        return data
     # If linear regression model
     elif target == "RATE_LR_DISCRETE" \
             or target == "RATE_LR_INCLUSION/EXCLUSION_SLOW" \
             or target == "RATE_LR_INCLUSION/EXCLUSION_FAST" \
             or target == "RATE_LR_CONTINUOUS":
-        # Set features
-        new_features = ["SCORE_NOW", "TIME_NOW", "RATE_LR_DISCRETE", "RATE_LR_INCLUSION/EXCLUSION_SLOW",
-                        "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LR_CONTINUOUS"]
-        for feature in new_features:
-            if feature not in features:
-                features.append(feature)
-    
-        # Create new dataframe
-        new_data = pd.DataFrame(columns=features)
-    
         # Initialize progress measures
         prog = Progress(0, len(data[id_name].unique()), "Rate Linear Regression", progress)
-    
+
         # Iterate through patients (who should have more than 2 years of data)
         for data_id in data[id_name].unique():
-            # Set time now
-            time_now = 0
-    
-            # Set row
-            for a, b in data[(data[id_name] == data_id) & (data[time_name] == time_now)].iterrows():
-                row = b.copy()
-    
-            # Set score now
-            score_now = row[score_name]
-    
             # Variables for linear regression (should be data for only first 24 months as input)
             x_var = data.loc[data[id_name] == data_id, time_name]
             y_var = data.loc[data[id_name] == data_id, score_name]
-    
+
             # Linear regression
             slope, intercept, r_value, p_value, std_err = stats.linregress(x_var, y_var)
-    
+
             # Set features
-            row["RATE_LR_CONTINUOUS"] = slope
-            row["TIME_NOW"] = time_now
-            row["SCORE_NOW"] = score_now
-    
-            # Add row to new_data
-            if not math.isnan(new_data.index.max()):
-                new_data.loc[new_data.index.max() + 1] = row[features]
-            else:
-                new_data.loc[0] = row[features]
-    
+            data.loc[(data[id_name] == data_id) & (data[time_name] == 0), "RATE_LR_CONTINUOUS"] = slope
+            data.loc[(data[id_name] == data_id) & (data[time_name] == 0), "TIME_NOW"] = 0
+            data.loc[(data[id_name] == data_id) & (data[time_name] == 0), "SCORE_NOW"] = data.loc[
+                (data[id_name] == data_id) & (data[time_name] == 0), score_name]
+
             # Update progress
             prog.update_progress()
-    
-        # Remove nulls
-        # new_data = new_data[new_data["RATE_LINEAR_REGRESSION_DISCRETE"].notnull()]
-    
+
+        # Only use baseline data
+        data = data[data[time_name] == 0]
+
         # Get tertiles
-        tertile_1 = np.percentile(new_data["RATE_LR_CONTINUOUS"], 33 + 1 / 3)
-        tertile_2 = np.percentile(new_data["RATE_LR_CONTINUOUS"], 66 + 2 / 3)
-    
+        tertile_1 = np.percentile(data["RATE_LR_CONTINUOUS"], 33 + 1 / 3)
+        tertile_2 = np.percentile(data["RATE_LR_CONTINUOUS"], 66 + 2 / 3)
+
+        # Print classification cutoffs
         if progress:
             print("SLOW/MODERATE CUTOFF: {}".format(tertile_1))
             print("MODERATE/FAST CUTOFF: {}".format(tertile_2))
-    
+
         # Label slow, medium, and fast progression
-        new_data.loc[new_data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_DISCRETE"] = 0
-        new_data.loc[
-            (new_data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
-                new_data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_DISCRETE"] = 1
-        new_data.loc[new_data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_DISCRETE"] = 2
-    
+        data.loc[data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_DISCRETE"] = 0
+        data.loc[
+            (data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
+                data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_DISCRETE"] = 1
+        data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_DISCRETE"] = 2
+
         # Label slow, medium, and fast progression
-        new_data.loc[new_data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
-        new_data.loc[
-            (new_data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
-                new_data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
-        new_data.loc[new_data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 1
-    
+        data.loc[data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
+        data.loc[
+            (data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
+                data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
+        data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 1
+
         # Label slow, medium, and fast progression
-        new_data.loc[new_data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 0
-        new_data.loc[
-            (new_data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
-                new_data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
-        new_data.loc[new_data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
-    
+        data.loc[data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 0
+        data.loc[
+            (data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
+                data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
+        data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
+
         # Return new data
-        return new_data
+        return data
 
 
 # Display progress in console
@@ -832,10 +804,10 @@ if __name__ == "__main__":
     # Set seed
     np.random.seed(0)
 
-    # Patient key: numeric IDs uniquely representing patients
+    # Patient key: numeric IDs uniquely representing patients (example: "PATNO")
     patient = "PATNO"
 
-    # Time key: numeric unit of time from baseline where time at baseline = 0
+    # Time key: numeric unit of time from baseline where time at baseline = 0 (example: "TIME_FROM_BL")
     time = "TIME_FROM_BL"
 
     # Model type (options: "Future Score", "Rate of Progression", "Time Until Symptom Onset")
@@ -861,19 +833,19 @@ if __name__ == "__main__":
             "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LR_DISCRETE"]
 
     # Data specific operations
-    # train = preprocess_data(mt, target=target_base, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
-    #                         data_filename="preprocessed_data_rate_of_progression.csv")
+    train = preprocess_data(mt, target=target_base, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
+                            data_filename="data/preprocessed_data_rate_of_progression.csv")
 
     # Retrieve pre-organized data
-    train = retrieve_data("preprocessed_data_rate_of_progression.csv", [patient, time])
+    # train = retrieve_data("data/precept_datatop_fs1_fs2_data.csv", [patient, time, target_base])
 
     # Prepare data
     train = process_data(train, mt, patient, time, target_base, target_primary, drop, True,
-                         data_filename="processed_data_rate_of_progression.csv")
+                         data_filename="data/processed_data_rate_of_progression.csv")
 
     # Maximize data dimensions w/o NAs
-    train = patient_and_feature_selection(train, patient, time, target_primary, 0, drop, None, True,
-                                          data_filename="disease_modeling_data_rate_of_progression.csv")
+    train = patient_and_feature_selection(train, patient, time, target_primary, None, drop, None, True,
+                                          data_filename="data/disease_modeling_data_rate_of_progression.csv")
 
     # Univariate feature selection
     mL.describe_data(data=train, univariate_feature_selection=[list(train.drop(target_primary, axis=1).columns.values),
@@ -881,12 +853,13 @@ if __name__ == "__main__":
 
     # Primary run of model
     train = \
-        model(train, mt, target_primary, patient, time, False, regressor, drop, None, 0.001, True, False)[
+        model(train, mt, target_primary, patient, time, True, regressor, drop, None, 0.001, True, False)[
             "Second Iteration Data"]
 
     # Maximize dimensions using only top predictors
     train = patient_and_feature_selection(train, patient, time, target_primary, None, drop, None, True,
-                                          data_filename="disease_modeling_data_rate_of_progression.csv")
+                                          data_filename="data/disease_modeling_data_rate_of_progression.csv")
 
     # Run model using top predictors
-    estimator = model(train, mt, target_primary, patient, time, False, regressor, drop, None)["Model"]
+    estimator = model(train, mt, target_primary, patient, time, True, regressor, drop, None,
+                      results_filename="data/results.csv")["Model"]
