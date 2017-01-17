@@ -211,7 +211,7 @@ def process_data(data, model_type, patient_key, time_key, base_target, primary_t
     elif rate_of_progression:
         # Generate new data set for predicting rate of progression
         data = generate_rate_of_progression(data=data, features=features, id_name=patient_key, score_name=base_target,
-                                            time_name=time_key, progress=print_results)
+                                            time_name=time_key, target=primary_target, progress=print_results)
 
     # Drop unused columns
     for column in data.keys():
@@ -325,7 +325,7 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
 
     # Drop unused columns
     for column in training_data.keys():
-        if column in drop_predictors or column in [target]:
+        if column in drop_predictors:
             training_data = training_data.drop(column, 1)
 
     # Initialize output
@@ -379,7 +379,8 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     if grid_search_action:
         # Run grid search
         grid_search = \
-            mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+            mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
+                       alg_names=alg_names,
                        scoring="r2" if regression else "accuracy",
                        grid_search_params=grid_search_params,
                        print_results=False)["Grid Search Random Forest"].best_estimator_
@@ -412,17 +413,20 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     #         top_predictors.remove(min(dep, key=lambda n: fid[n]))
 
     # Display metrics, including r2 score
-    metrics = mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+    metrics = mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
+                         alg_names=alg_names,
                          feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
                          scoring="r2", print_results=print_results)
 
     # Display mean absolute error score
-    metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+    metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
+                              alg_names=alg_names,
                               cross_val=[True], scoring="mean_absolute_error", description=None,
                               print_results=print_results))
 
     # Display root mean squared error score
-    metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+    metrics.update(mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
+                              alg_names=alg_names,
                               cross_val=[True],
                               scoring="root_mean_squared_error", description=None,
                               print_results=print_results))
@@ -433,16 +437,18 @@ def model(data, model_type, target, patient_key, time_key, grid_search_action=Fa
     if not regression:
         # Display classification accuracy
         metrics.update(
-                mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+                mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
+                           alg_names=alg_names,
                            cross_val=[True], scoring="accuracy", description=None, print_results=print_results))
 
         # Display classification report
-        mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+        mL.metrics(data=data, predictors=predictors, target=target, algs=algs,
+                   alg_names=alg_names,
                    split_classification_report=[True], description=None, print_results=print_results)
 
         # Display confusion matrix
-        mL.metrics(data=data, predictors=predictors, target=target, algs=algs, alg_names=alg_names,
-                   split_confusion_matrix=[True], description=None, print_results=print_results)
+        # mL.metrics(data=data[predictors + [target]], predictors=predictors, target=target, algs=algs, alg_names=alg_names,
+        #            split_confusion_matrix=[True], description=None, print_results=print_results)
 
     # If grid search results, print results
     if print_results and grid_search_action:
@@ -648,134 +654,150 @@ def generate_time_until_symptom_onset(data, features, id_name, time_name, condit
 
 
 # Generate rates of progression
-def generate_rate_of_progression(data, features, id_name, time_name, score_name, progress):
-    # # Set features
-    # new_features = ["RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_SLOW", "RATE_LME_INCLUSION/EXCLUSION_FAST"
-    #                 "SCORE_NOW", "TIME_NOW"]
-    # for feature in new_features:
-    #     if feature not in features:
-    #         features.append(feature)
-    #
-    # # Linear mixed-effects model w/ random slopes/random intercepts
-    # lme = sm.MixedLM.from_formula("{} ~ {}".format(score_name, time_name), data, re_formula=time_name,
-    #                               groups=data[id_name])
-    #
-    # # Fit lme model
-    # lme_fit = lme.fit()
-    #
-    # # Lme results
-    # lme_result = lme_fit.random_effects.drop("Intercept", 1)
-    #
-    # # Rename lme rate
-    # lme_result.rename(columns={time_name: "RATE_LME_CONTINUOUS"}, inplace=True)
-    #
-    # # Get tertiles
-    # lme_tertile_1 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 33 + 1 / 3)
-    # lme_tertile_2 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 66 + 2 / 3)
-    #
-    # if progress:
-    #     print "SLOW/MODERATE CUTOFF: {}".format(lme_tertile_1)
-    #     print "MODERATE/FAST CUTOFF: {}".format(lme_tertile_2)
-    #
-    # # Label fast and not fast progression
-    # lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
-    # lme_result.loc[
-    #     (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
-    #         lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
-    # lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 1
-    #
-    # # Label slow and not slow progression
-    # lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 0
-    # lme_result.loc[
-    #     (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
-    #         lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
-    # lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
-    #
-    # # Merge baseline data w/ lme results
-    # lme_data = data[data[time_name] == 0].merge(lme_result, how="left", left_on=[id_name], right_index=True)
-    #
-    # return lme_data
-
-    # Set features
-    new_features = ["SCORE_NOW", "TIME_NOW", "RATE_LINEAR_REGRESSION_DISCRETE", "RATE_LR_INCLUSION/EXCLUSION_SLOW",
-                    "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LINEAR_REGRESSION_CONTINUOUS"]
-    for feature in new_features:
-        if feature not in features:
-            features.append(feature)
-
-    # Create new dataframe
-    new_data = pd.DataFrame(columns=features)
-
-    # Initialize progress measures
-    prog = Progress(0, len(data[id_name].unique()), "Rate Linear Regression", progress)
-
-    # Iterate through patients (who should have more than 2 years of data)
-    for data_id in data[id_name].unique():
-        # Set time now
-        time_now = 0
-
-        # Set row
-        for a, b in data[(data[id_name] == data_id) & (data[time_name] == time_now)].iterrows():
-            row = b.copy()
-
-        # Set score now
-        score_now = row[score_name]
-
-        # Variables for linear regression (should be data for only first 24 months as input)
-        x_var = data.loc[data[id_name] == data_id, time_name]
-        y_var = data.loc[data[id_name] == data_id, score_name]
-
-        # Linear regression
-        slope, intercept, r_value, p_value, std_err = stats.linregress(x_var, y_var)
-
+def generate_rate_of_progression(data, features, id_name, time_name, score_name, target, progress):
+    # If linear mixed effects model
+    if target == "RATE_LME_CONTINUOUS" \
+            or target == "RATE_LME_INCLUSION/EXCLUSION_SLOW" \
+            or target == "RATE_LME_INCLUSION/EXCLUSION_FAST" \
+            or target == "RATE_LME_DISCRETE":
         # Set features
-        row["RATE_LINEAR_REGRESSION_CONTINUOUS"] = slope
-        row["TIME_NOW"] = time_now
-        row["SCORE_NOW"] = score_now
+        new_features = ["RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_SLOW", "RATE_LME_INCLUSION/EXCLUSION_FAST"
+                        "RATE_LME_DISCRETE", "SCORE_NOW", "TIME_NOW"]
+        for feature in new_features:
+            if feature not in features:
+                features.append(feature)
 
-        # Add row to new_data
-        if not math.isnan(new_data.index.max()):
-            new_data.loc[new_data.index.max() + 1] = row[features]
-        else:
-            new_data.loc[0] = row[features]
+        # Linear mixed-effects model w/ random slopes/random intercepts
+        lme = sm.MixedLM.from_formula("{} ~ {}".format(score_name, time_name), data, re_formula=time_name,
+                                      groups=data[id_name])
 
-        # Update progress
-        prog.update_progress()
+        # Fit lme model
+        lme_fit = lme.fit()
 
-    # Remove nulls
-    # new_data = new_data[new_data["RATE_LINEAR_REGRESSION_DISCRETE"].notnull()]
+        # Lme results
+        lme_result = lme_fit.random_effects.drop("Intercept", 1)
 
-    # Get tertiles
-    tertile_1 = np.percentile(new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"], 33 + 1 / 3)
-    tertile_2 = np.percentile(new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"], 66 + 2 / 3)
+        # Rename lme rate
+        lme_result.rename(columns={time_name: "RATE_LME_CONTINUOUS"}, inplace=True)
 
-    if progress:
-        print "SLOW/MODERATE CUTOFF: {}".format(tertile_1)
-        print "MODERATE/FAST CUTOFF: {}".format(tertile_2)
+        # Get tertiles
+        lme_tertile_1 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 33 + 1 / 3)
+        lme_tertile_2 = np.percentile(lme_result["RATE_LME_CONTINUOUS"], 66 + 2 / 3)
 
-    # Label slow, medium, and fast progression
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_1, "RATE_LINEAR_REGRESSION_DISCRETE"] = 0
-    new_data.loc[
-        (new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_1) & (
-            new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_2), "RATE_LINEAR_REGRESSION_DISCRETE"] = 1
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_2, "RATE_LINEAR_REGRESSION_DISCRETE"] = 2
+        if progress:
+            print("SLOW/MODERATE CUTOFF: {}".format(lme_tertile_1))
+            print("MODERATE/FAST CUTOFF: {}".format(lme_tertile_2))
 
-    # Label slow, medium, and fast progression
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
-    new_data.loc[
-        (new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_1) & (
-            new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 1
+        # Label slow, moderate, and fast progression
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_DISCRETE"] = 0
+        lme_result.loc[
+            (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
+                lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_DISCRETE"] = 1
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_DISCRETE"] = 2
 
-    # Label slow, medium, and fast progression
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 0
-    new_data.loc[
-        (new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_1) & (
-            new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
-    new_data.loc[new_data["RATE_LINEAR_REGRESSION_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
+        # Label fast and not fast progression
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
+        lme_result.loc[
+            (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
+                lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 1
 
-    # Return new data
-    return new_data
+        # Label slow and not slow progression
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 0
+        lme_result.loc[
+            (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
+                lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
+
+        # Merge baseline data w/ lme results
+        lme_data = data[data[time_name] == 0].merge(lme_result, how="left", left_on=[id_name], right_index=True)
+
+        return lme_data
+    # If linear regression model
+    elif target == "RATE_LR_DISCRETE" \
+            or target == "RATE_LR_INCLUSION/EXCLUSION_SLOW" \
+            or target == "RATE_LR_INCLUSION/EXCLUSION_FAST" \
+            or target == "RATE_LR_CONTINUOUS":
+        # Set features
+        new_features = ["SCORE_NOW", "TIME_NOW", "RATE_LR_DISCRETE", "RATE_LR_INCLUSION/EXCLUSION_SLOW",
+                        "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LR_CONTINUOUS"]
+        for feature in new_features:
+            if feature not in features:
+                features.append(feature)
+    
+        # Create new dataframe
+        new_data = pd.DataFrame(columns=features)
+    
+        # Initialize progress measures
+        prog = Progress(0, len(data[id_name].unique()), "Rate Linear Regression", progress)
+    
+        # Iterate through patients (who should have more than 2 years of data)
+        for data_id in data[id_name].unique():
+            # Set time now
+            time_now = 0
+    
+            # Set row
+            for a, b in data[(data[id_name] == data_id) & (data[time_name] == time_now)].iterrows():
+                row = b.copy()
+    
+            # Set score now
+            score_now = row[score_name]
+    
+            # Variables for linear regression (should be data for only first 24 months as input)
+            x_var = data.loc[data[id_name] == data_id, time_name]
+            y_var = data.loc[data[id_name] == data_id, score_name]
+    
+            # Linear regression
+            slope, intercept, r_value, p_value, std_err = stats.linregress(x_var, y_var)
+    
+            # Set features
+            row["RATE_LR_CONTINUOUS"] = slope
+            row["TIME_NOW"] = time_now
+            row["SCORE_NOW"] = score_now
+    
+            # Add row to new_data
+            if not math.isnan(new_data.index.max()):
+                new_data.loc[new_data.index.max() + 1] = row[features]
+            else:
+                new_data.loc[0] = row[features]
+    
+            # Update progress
+            prog.update_progress()
+    
+        # Remove nulls
+        # new_data = new_data[new_data["RATE_LINEAR_REGRESSION_DISCRETE"].notnull()]
+    
+        # Get tertiles
+        tertile_1 = np.percentile(new_data["RATE_LR_CONTINUOUS"], 33 + 1 / 3)
+        tertile_2 = np.percentile(new_data["RATE_LR_CONTINUOUS"], 66 + 2 / 3)
+    
+        if progress:
+            print("SLOW/MODERATE CUTOFF: {}".format(tertile_1))
+            print("MODERATE/FAST CUTOFF: {}".format(tertile_2))
+    
+        # Label slow, medium, and fast progression
+        new_data.loc[new_data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_DISCRETE"] = 0
+        new_data.loc[
+            (new_data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
+                new_data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_DISCRETE"] = 1
+        new_data.loc[new_data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_DISCRETE"] = 2
+    
+        # Label slow, medium, and fast progression
+        new_data.loc[new_data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
+        new_data.loc[
+            (new_data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
+                new_data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
+        new_data.loc[new_data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 1
+    
+        # Label slow, medium, and fast progression
+        new_data.loc[new_data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 0
+        new_data.loc[
+            (new_data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
+                new_data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
+        new_data.loc[new_data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
+    
+        # Return new data
+        return new_data
 
 
 # Display progress in console
@@ -833,10 +855,10 @@ if __name__ == "__main__":
             "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
             "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE",
             "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_LINEAR_REGRESSION_CONTINUOUS",
+            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_LR_CONTINUOUS",
             "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL", "HAS_PD", "TOTAL",
             "RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_SLOW",
-            "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LINEAR_REGRESSION_DISCRETE"]
+            "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LR_DISCRETE"]
 
     # Data specific operations
     # train = preprocess_data(mt, target=target_base, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
@@ -859,12 +881,12 @@ if __name__ == "__main__":
 
     # Primary run of model
     train = \
-        model(train, mt, target_primary, patient, time, True, regressor, [x for x in drop if x not in [patient, time]],
-              None, 0.001, True, False)["Second Iteration Data"]
+        model(train, mt, target_primary, patient, time, False, regressor, drop, None, 0.001, True, False)[
+            "Second Iteration Data"]
 
     # Maximize dimensions using only top predictors
     train = patient_and_feature_selection(train, patient, time, target_primary, None, drop, None, True,
                                           data_filename="disease_modeling_data_rate_of_progression.csv")
 
     # Run model using top predictors
-    estimator = model(train, mt, target_primary, patient, time, True, regressor, drop, None)["Model"]
+    estimator = model(train, mt, target_primary, patient, time, False, regressor, drop, None)["Model"]
