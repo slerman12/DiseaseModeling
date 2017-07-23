@@ -15,6 +15,33 @@ from sklearn.svm import SVC
 import MachineLearning as mL
 
 
+# Display progress in console
+class Progress:
+    # Initialize progress measures
+    progress_complete = 0.00
+    progress_total = 0.00
+    name = ""
+    show = True
+
+    def __init__(self, pc, pt, name, show):
+        self.progress_complete = pc
+        self.progress_total = pt
+        self.name = name
+        self.show = show
+        if self.show:
+            sys.stdout.write("\rProgress: {:.2%} [{}]".format(0, name))
+            sys.stdout.flush()
+
+    def update_progress(self):
+        # Update progress
+        self.progress_complete += 1.00
+        if self.show:
+            sys.stdout.write("\rProgress: {:.2%} [{}]".format(self.progress_complete / self.progress_total, self.name))
+            sys.stdout.flush()
+        if (self.progress_complete == self.progress_total) and self.show:
+            print("")
+
+
 # Helper method for retrieving a pre-organized data set
 def retrieve_data(filename, keys):
     # Retrieve preprocessed data from file
@@ -52,6 +79,7 @@ def preprocess_data(model_type, target, data_filename="preprocessed_data.csv", c
     # Create main all_updrs file
     all_updrs.to_csv("data/all_updrs_main.csv", index=False)
 
+    # TODO: Make this after merging SC to BL and output file
     # Enrolled cohorts patients
     pd_control_patients = all_patients.loc[
         (np.bitwise_or.reduce(np.array([(all_patients["APPRDX"] == cohort) for cohort in cohorts]))) & (
@@ -668,7 +696,6 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
             or target == "RATE_LME_INCLUSION/EXCLUSION_SLOW" \
             or target == "RATE_LME_INCLUSION/EXCLUSION_FAST" \
             or target == "RATE_LME_DISCRETE":
-
         # Linear mixed-effects model w/ random slopes/random intercepts
         lme = sm.MixedLM.from_formula("{} ~ {}".format(score_name, time_name), data, re_formula="~" + time_name,
                                       groups=data[id_name])
@@ -819,55 +846,147 @@ def stats(histogram=None, show=True):
             plt.show()
 
 
-# Display progress in console
-class Progress:
-    # Initialize progress measures
-    progress_complete = 0.00
-    progress_total = 0.00
-    name = ""
-    show = True
+# Histograms of rate frequencies for LME using data of all patients vs of PD patients, compared with LR
+def histograms_rate_LME_types_LR(patient_key, time_key, model_type, is_regressor, base_target, outcome_measure,
+                                 add_predictors=None,
+                                 drop_predictors=None, filename_suffix="disease_modeling"):
+    # Initiate empty list(s) when no drop/add predictors
+    if add_predictors is None:
+        add_predictors = []
+    if drop_predictors is None:
+        drop_predictors = []
 
-    def __init__(self, pc, pt, name, show):
-        self.progress_complete = pc
-        self.progress_total = pt
-        self.name = name
-        self.show = show
-        if self.show:
-            sys.stdout.write("\rProgress: {:.2%} [{}]".format(0, name))
-            sys.stdout.flush()
+    # Retrieve pre-organized data
+    preprocessed_data_pd = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
+                                         [patient_key, time_key, base_target])
 
-    def update_progress(self):
-        # Update progress
-        self.progress_complete += 1.00
-        if self.show:
-            sys.stdout.write("\rProgress: {:.2%} [{}]".format(self.progress_complete / self.progress_total, self.name))
-            sys.stdout.flush()
-        if (self.progress_complete == self.progress_total) and self.show:
-            print("")
+    # Prepare data
+    processed_data_pd_rate_lme = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
+                                              outcome_measure, drop_predictors, True,
+                                              data_filename="data/output/processed_{}.csv".format(
+                                                  filename_suffix + "_lme"))
+
+    # Suffix of file output names
+    filename_suffix = "pd_control_data_rate_of_progression"
+
+    # Retrieve pre-organized data
+    preprocessed_data_pd_control = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
+                                                 [patient_key, time_key, base_target])
+
+    # Prepare data
+    processed_data_pd_control_rate_lme = process_data(preprocessed_data_pd_control, model_type, patient_key, time_key,
+                                                      base_target, outcome_measure, drop_predictors, True,
+                                                      data_filename="data/output/processed_{}.csv".format(
+                                                          filename_suffix + "_lme"))
+
+    # Change outcome measure to linear regression
+    outcome_measure = "RATE_LR_CONTINUOUS"
+
+    # Suffix of file output names
+    filename_suffix = "pd_data_rate_of_progression"
+
+    # Prepare data
+    processed_data_pd_rate_lr = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
+                                             outcome_measure, drop_predictors, True,
+                                             data_filename="data/output/processed_{}.csv".format(
+                                                 filename_suffix + "_lr"))
+
+    # Stats on rates
+    stats(histogram={"info": [
+        {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33},
+        {"data": processed_data_pd_control_rate_lme.loc[
+            processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
+         "label": "LME on PD and control patients", "alpha": .33},
+        {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
+
+    stats(histogram={"info": [
+        {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
+
+    stats(histogram={"info": [
+        {"data": processed_data_pd_control_rate_lme.loc[
+            processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
+         "label": "LME on PD and control patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
+
+    stats(histogram={"info": [
+        {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
+
+
+# Patient key: Numeric IDs uniquely representing patients (example: "PATNO")
+# Time key: Numeric unit of time from baseline where time at baseline = 0 (example: "TIME_FROM_BL")
+# Model type: Select "Future Score", "Rate of Progression", or "Time Until Symptom Onset")
+# Is regression: True for modeling regression, False for classification
+# Base target: Feature from raw data to be used to create outcome measure (example: "TOTAL" or combined part II an III)
+# Outcome measure: Final target (examples: "SCORE_FUTURE", "TIME_UNTIL_MILESTONE", "RATE_LME_INCLUSION/EXCLUSION_FAST")
+# Add predictors: Explicit features to add as predictors, regardless of ranking of importance
+# Drop predictors: Explicit features not to use as predictors, regardless of ranking of importance
+# Filename suffix: Suffix of file output names
+def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_measure, add_predictors=None,
+        drop_predictors=None, filename_suffix="disease_modeling"):
+    # Initiate empty list(s) when no drop/add predictors
+    if add_predictors is None:
+        add_predictors = []
+    if drop_predictors is None:
+        drop_predictors = []
+
+    # Data specific operations (cohorts=["PD", "GRPD", "GCPD"] )
+    preprocessed_data = preprocess_data(model_type, target=base_target, cohorts=["PD", "GRPD", "GCPD"],
+                                        print_results=True,
+                                        data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
+
+    # Retrieve pre-organized data
+    preprocessed_data = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
+                                      [patient_key, time_key, base_target])
+
+    # Prepare data
+    processed_data = process_data(preprocessed_data, model_type, patient_key, time_key, base_target, outcome_measure,
+                                  drop_predictors, True,
+                                  data_filename="data/output/processed_{}.csv".format(filename_suffix))
+
+    # Maximize data dimensions w/o NAs
+    no_nulls_data = eliminate_nulls_maximally(processed_data, patient_key, time_key, outcome_measure, None,
+                                              drop_predictors, None, True,
+                                              data_filename="data/output/no_nulls_data_{}.csv".format(filename_suffix))
+
+    # Univariate feature selection
+    mL.describe_data(data=no_nulls_data,
+                     univariate_feature_selection=[list(no_nulls_data.drop(outcome_measure, axis=1).columns.values),
+                                                   outcome_measure])
+
+    # Primary run of model
+    important_predictors = \
+        model(no_nulls_data, model_type, outcome_measure, patient_key, time_key, False, is_regressor, drop_predictors,
+              None, 0.001, True, False)[
+            "Top Predictors"]
+
+    # Final list of features: top predictors + keys + target
+    final_features = list(
+            set(important_predictors).union(add_predictors).union([patient_key, time_key, outcome_measure]))
+
+    # Eliminate nulls maximally from processed data without unused features
+    final_data = eliminate_nulls_maximally(processed_data[final_features], patient_key, time_key, outcome_measure, None,
+                                           drop_predictors,
+                                           None,
+                                           True, data_filename="data/output/final_data_{}.csv".format(filename_suffix))
+
+    # Run model using top predictors
+    estimator = \
+        model(final_data, model_type, outcome_measure, patient_key, time_key, False, is_regressor, drop_predictors,
+              None,
+              results_filename="data/output/results_{}.csv".format(filename_suffix))["Model"]
 
 
 # Main method
 if __name__ == "__main__":
     # Set seed
     np.random.seed(0)
-
-    # Patient key: numeric IDs uniquely representing patients (example: "PATNO")
-    patient = "PATNO"
-
-    # Time key: numeric unit of time from baseline where time at baseline = 0 (example: "TIME_FROM_BL")
-    time = "TIME_FROM_BL"
-
-    # Model type (options: "Future Score", "Rate of Progression", "Time Until Symptom Onset")
-    mt = "Rate of Progression"
-
-    # Model regression or classification (True for regression, False for classification)
-    regressor = True
-
-    # Base target (example: "TOTAL")
-    target_base = "TOTAL"
-
-    # Target (some examples: "SCORE_FUTURE", "TIME_UNTIL_MILESTONE", "RATE_LME_INCLUSION/EXCLUSION_FAST")
-    target_primary = "RATE_LME_CONTINUOUS"
 
     # TODO: Consider features that have nulls but should be included with binary dummies
     # Features to add as predictors regardless of importance ranking
@@ -886,77 +1005,11 @@ if __name__ == "__main__":
             "pt3_adj", "pt3_unadj", "pt3_st_adj", "pt3_st_unadj", "pt3_nst_adj", "pt3_nst_unadj", "total_adj0",
             "total_adj1", "total_adj2", "pt3_adj0", "pt3_adj1", "pt3_adj2", "total_nst_adj", "total_nst_unadj"]
 
-    # Suffix of file output names
-    # filename_suffix = "pd_data_rate_of_progression"
+    # Histograms of rate frequencies for LME using data of all patients vs of PD patients, compared with LR
+    histograms_rate_LME_types_LR(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression",
+                                 is_regressor=True, base_target="TOTAL", outcome_measure="RATE_LME_CONTINUOUS",
+                                 drop_predictors=drop, filename_suffix="pd_data_rate_of_progression")
 
-    # Data specific operations (cohorts=["PD", "GRPD", "GCPD"] )
-    # preprocessed_data = preprocess_data(mt, target=target_base, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
-    #                                     data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
-
-    # Retrieve pre-organized data
-    # preprocessed_data = retrieve_data("data/preprocessed_{}.csv".format(filename_suffix),
-    #                                   [patient, time, target_base])
-
-    # Prepare data
-    # processed_data = process_data(preprocessed_data, mt, patient, time, target_base, target_primary, drop, True,
-    #                               data_filename="data/output/processed_{}.csv".format(filename_suffix))
-
-    # Suffix of file output names
-    filename_suffix = "pd_data_rate_of_progression"
-
-    # Retrieve pre-organized data
-    preprocessed_data_pd = preprocess_data(mt, target=target_base, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
-                                           data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
-
-    # Prepare data
-    processed_data_pd = process_data(preprocessed_data_pd, mt, patient, time, target_base, target_primary, drop, True,
-                                     data_filename="data/output/processed_{}.csv".format(filename_suffix))
-
-    # Suffix of file output names
-    filename_suffix = "pd_control_data_rate_of_progression"
-
-    # Retrieve pre-organized data
-    preprocessed_data_pd_control = preprocess_data(mt, target=target_base, cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
-                                                   print_results=True,
-                                                   data_filename="data/output/preprocessed_{}.csv".format(
-                                                       filename_suffix))
-
-    # Prepare data
-    processed_data_pd_control = process_data(preprocessed_data_pd_control, mt, patient, time, target_base,
-                                             target_primary, drop,
-                                             True,
-                                             data_filename="data/output/processed_{}.csv".format(filename_suffix))
-
-    # Stats on rates
-    # processed_data["RATE_LME_CONTINUOUS"].describe()
-    stats(histogram={"info": [{"data": processed_data_pd["RATE_LME_CONTINUOUS"], "label": "LME rates PD patients only"},
-                              {"data": processed_data_pd_control["RATE_LME_CONTINUOUS"],
-                               "label": "LME rates PD and control patients"}],
-                     "title": "Frequency of LME Rates of Progression PD Patients", "xlabel": "Rate (UPDRS / Time)",
-                     "ylabel": "Frequency", "legend": True})
-
-    # # Maximize data dimensions w/o NAs
-    # no_nulls_data = eliminate_nulls_maximally(processed_data, patient, time, target_primary, None, drop, None, True,
-    #                                           data_filename="data/output/no_nulls_data_{}.csv".format(filename_suffix))
-    #
-    # # Univariate feature selection
-    # mL.describe_data(data=no_nulls_data,
-    #                  univariate_feature_selection=[list(no_nulls_data.drop(target_primary, axis=1).columns.values),
-    #                                                target_primary])
-    #
-    # # Primary run of model
-    # important_predictors = \
-    #     model(no_nulls_data, mt, target_primary, patient, time, False, regressor, drop, None, 0.001, True, False)[
-    #         "Top Predictors"]
-    #
-    # # Final list of features: top predictors + keys + target
-    # final_features = list(set(important_predictors).union(add).union([patient, time, target_primary]))
-    #
-    # # Eliminate nulls maximally from processed data without unused features
-    # final_data = eliminate_nulls_maximally(processed_data[final_features], patient, time, target_primary, None, drop,
-    #                                        None,
-    #                                        True, data_filename="data/output/final_data_{}.csv".format(filename_suffix))
-    #
-    # # Run model using top predictors
-    # estimator = model(final_data, mt, target_primary, patient, time, False, regressor, drop, None,
-    #                   results_filename="data/output/results_{}.csv".format(filename_suffix))["Model"]
+    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression",
+    #     is_regressor=True, base_target="TOTAL", outcome_measure="RATE_LME_CONTINUOUS",
+    #     drop_predictors=drop, filename_suffix="pd_data_rate_of_progression")
