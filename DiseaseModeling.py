@@ -128,10 +128,11 @@ def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_
     # Make ON_OFF_DOSE binary dummies - why?
     # data = pd.get_dummies(data, columns=["ON_OFF_DOSE"])
 
-    # TODO: Why are there duplicates? Are there?
+    # TODO: Why are there duplicates? Are there actually?
     # Drop duplicates based on PATNO and EVENT_ID, keep only first
     data = data.drop_duplicates(subset=["PATNO", "EVENT_ID"], keep="first")
 
+    # TODO: Figure out which other categorical data can be numerically encoded
     # Encode to numeric
     mL.clean_data(data=data, encode_auto=["HANDED", "PAG_UPDRS3"], encode_man={
         "EVENT_ID": {"BL": 0, "V01": 1, "V02": 2, "V03": 3, "V04": 4, "V05": 5, "V06": 6, "V07": 7, "V08": 8,
