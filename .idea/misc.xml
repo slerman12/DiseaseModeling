@@ -38,9 +38,6 @@
       <property name="caretWidth" class="java.lang.Integer" />
     </properties>
   </component>
-  <component name="EntryPointsManager">
-    <entry_points version="2.0" />
-  </component>
   <component name="ProjectLevelVcsManager" settingsEditedManually="false">
     <OptionsSetting value="true" id="Add" />
     <OptionsSetting value="true" id="Remove" />
@@ -51,10 +48,7 @@
     <ConfirmationsSetting value="0" id="Add" />
     <ConfirmationsSetting value="0" id="Remove" />
   </component>
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_1_3" default="false" assert-keyword="false" jdk-15="false" project-jdk-name="Python 3.5.2 (C:\Anaconda3\python.exe)" project-jdk-type="Python SDK">
+  <component name="ProjectRootManager" version="2" languageLevel="JDK_1_6" default="false" assert-keyword="true" jdk-15="true" project-jdk-name="Python 3.5.3 (~/anaconda/envs/MachineLearning/bin/python3.5)" project-jdk-type="Python SDK">
     <output url="file://$PROJECT_DIR$/out" />
-  </component>
-  <component name="PythonCompatibilityInspectionAdvertiser">
-    <option name="version" value="1" />
   </component>
 </project>

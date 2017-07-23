@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/Web_Machine_Learning.iml" filepath="$PROJECT_DIR$/Web_Machine_Learning.iml" />
+      <module fileurl="file://$PROJECT_DIR$/WebMachineLearning.iml" filepath="$PROJECT_DIR$/WebMachineLearning.iml" />
     </modules>
   </component>
 </project>
