@@ -58,30 +58,30 @@ def retrieve_data(filename, keys):
 # Data specific operations (Merge into one file, generate time from baseline in months, standardize feature name/values)
 def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_sc_into_bl_file_path=None,
                     data_filename="preprocessed_data.csv"):
+    # Import the data frames from files
+    with np.warnings.catch_warnings():
+        np.warnings.simplefilter("ignore")
+        all_patients = pd.read_csv("data/raw_data/all_pats.csv")
+        all_visits = pd.read_csv("data/raw_data/all_visits.csv")
+        all_updrs = pd.read_csv("data/raw_data/all_updrs.csv")
+        updrs_part_iii = pd.read_csv("data/raw_data/MDS_UPDRS_Part_III__Post_Dose_.csv")
+
+    # Include on/off data in the UPDRS dataframe to finish building all_updrs
+    all_updrs = all_updrs.merge(updrs_part_iii, how="left",
+                                on=["PATNO", "EVENT_ID", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU",
+                                    "NP3RIGLU", "PN3RIGRL", "NP3RIGLL", "NP3FTAPR", "NP3FTAPL", "NP3HMOVR",
+                                    "NP3HMOVL", "NP3PRSPR", "NP3PRSPL", "NP3TTAPR", "NP3TTAPL", "NP3LGAGR",
+                                    "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL", "NP3POSTR",
+                                    "NP3BRADY", "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU",
+                                    "NP3RTALU", "NP3RTARL", "NP3RTALL", "NP3RTALJ",
+                                    "NP3RTCON"])[["PATNO", "EVENT_ID", "TOTAL", "ANNUAL_TIME_BTW_DOSE_NUPDRS",
+                                                  "ON_OFF_DOSE", "PD_MED_USE"]]
+
+    data_merged = all_visits.merge(all_updrs, on=["PATNO", "EVENT_ID", "ON_OFF_DOSE"], how="left").merge(
+            all_patients, on="PATNO", how="left", suffixes=["_x", ""])
+
     # Merge data and remove SC rows after combining them with BL rows
     if data_merged_sc_into_bl_file_path is None:
-        # Import the data frames from files
-        with np.warnings.catch_warnings():
-            np.warnings.simplefilter("ignore")
-            all_patients = pd.read_csv("data/raw_data/all_pats.csv")
-            all_visits = pd.read_csv("data/raw_data/all_visits.csv")
-            all_updrs = pd.read_csv("data/raw_data/all_updrs.csv")
-            updrs_part_iii = pd.read_csv("data/raw_data/MDS_UPDRS_Part_III__Post_Dose_.csv")
-
-        # Include on/off data in the UPDRS dataframe to finish building all_updrs
-        all_updrs = all_updrs.merge(updrs_part_iii, how="left",
-                                    on=["PATNO", "EVENT_ID", "NP3SPCH", "NP3FACXP", "NP3RIGN", "NP3RIGRU",
-                                        "NP3RIGLU", "PN3RIGRL", "NP3RIGLL", "NP3FTAPR", "NP3FTAPL", "NP3HMOVR",
-                                        "NP3HMOVL", "NP3PRSPR", "NP3PRSPL", "NP3TTAPR", "NP3TTAPL", "NP3LGAGR",
-                                        "NP3LGAGL", "NP3RISNG", "NP3GAIT", "NP3FRZGT", "NP3PSTBL", "NP3POSTR",
-                                        "NP3BRADY", "NP3PTRMR", "NP3PTRML", "NP3KTRMR", "NP3KTRML", "NP3RTARU",
-                                        "NP3RTALU", "NP3RTARL", "NP3RTALL", "NP3RTALJ",
-                                        "NP3RTCON"])[["PATNO", "EVENT_ID", "TOTAL", "ANNUAL_TIME_BTW_DOSE_NUPDRS",
-                                                      "ON_OFF_DOSE", "PD_MED_USE"]]
-
-        data_merged = all_visits.merge(all_updrs, on=["PATNO", "EVENT_ID", "ON_OFF_DOSE"], how="left").merge(
-                all_patients, on="PATNO", how="left", suffixes=["_x", ""])
-
         # Initiate progress
         prog = Progress(0, len(data_merged["PATNO"].unique()), "Merging Screening Into Baseline", print_results)
 
@@ -96,8 +96,8 @@ def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_
                         data_merged.loc[
                             (data_merged["PATNO"] == subject) & (data_merged["EVENT_ID"] == "BL"), column] = \
                             data_merged.loc[
-                                    (data_merged["PATNO"] == subject) & (
-                                        data_merged["EVENT_ID"] == "SC"), column].tolist()[-1]
+                                (data_merged["PATNO"] == subject) & (
+                                    data_merged["EVENT_ID"] == "SC"), column].tolist()[-1]
             # Update progress
             prog.update_progress()
 
@@ -816,7 +816,7 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
 
 
 # Compute stats
-def stats(histogram=None, show=True):
+def stats(histogram=None, bar=None, show=True):
     # Histogram
     if histogram is not None:
         # Plot info for each histogram
@@ -846,91 +846,151 @@ def stats(histogram=None, show=True):
         if show:
             plt.show()
 
+    if bar is not None:
+        # x Positions
+        xpos = np.arange(len(bar["labels"]))
+
+        # Create bar graph
+        plt.bar(xpos, bar["yvalues"], align='center', alpha=0.5)
+        plt.xticks(xpos, bar["labels"])
+
+        # Title
+        if "title" in bar:
+            plt.title(bar["title"])
+
+        # X label
+        if "xlabel" in bar:
+            plt.xlabel(bar["xlabel"])
+
+        # Y label
+        if "ylabel" in bar:
+            plt.ylabel(bar["ylabel"])
+
+        if show:
+            plt.show()
+
 
 # Histograms of rate frequencies for LME using data of all patients vs of PD patients, compared with LR
 def histograms_rate_lme_types_lr(patient_key, time_key, base_target, drop_predictors=None):
-    # Initiate empty list when no drop predictors
-    if drop_predictors is None:
-        drop_predictors = []
-
-    # Select rate of progression model
-    model_type = "Rate of Progression"
-
-    # Suffix of file output names
-    filename_suffix = "pd_data"
+    # # Initiate empty list when no drop predictors
+    # if drop_predictors is None:
+    #     drop_predictors = []
+    #
+    # # Select rate of progression model
+    # model_type = "Rate of Progression"
+    #
+    # # Suffix of file output names
+    # filename_suffix = "pd_data"
+    #
+    # # Retrieve pre-organized data
+    # # preprocessed_data_pd = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
+    # #                                      [patient_key, time_key, base_target])
+    #
+    # # Data specific operations (ex. cohorts=["PD", "GRPD", "GCPD"] )
+    # preprocessed_data_pd = preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
+    #                                        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
+    #                                        data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
+    #
+    # # Start outcome measure as linear mixed effects
+    # outcome_measure = "RATE_LME_CONTINUOUS"
+    #
+    # # Prepare data and generate outcome measure
+    # processed_data_pd_rate_lme = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
+    #                                           outcome_measure, drop_predictors, print_results=True, output_file=True,
+    #                                           data_filename="data/output/processed_{}_{}.csv".format(
+    #                                                   filename_suffix, outcome_measure))
+    #
+    # # Suffix of file output names
+    # filename_suffix = "pd_control_data"
+    #
+    # # Data specific operations (ex. cohorts=["PD", "GRPD", "GCPD"] )
+    # preprocessed_data_pd_control = \
+    #     preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD", "CONTROL"], print_results=True,
+    #                     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
+    #                     data_filename="data/output/preprocessed_{}.csv".format(
+    #                             filename_suffix))
+    #
+    # # Prepare data and generate outcome measure
+    # processed_data_pd_control_rate_lme = process_data(preprocessed_data_pd_control, model_type, patient_key, time_key,
+    #                                                   base_target, outcome_measure, drop_predictors, print_results=True,
+    #                                                   output_file=True,
+    #                                                   data_filename="data/output/processed_{}_{}.csv".format(
+    #                                                       filename_suffix, outcome_measure))
+    #
+    # # Change outcome measure to linear regression
+    # outcome_measure = "RATE_LR_CONTINUOUS"
+    #
+    # # Suffix of file output names
+    # filename_suffix = "pd_data"
+    #
+    # # Prepare data
+    # processed_data_pd_rate_lr = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
+    #                                          outcome_measure, drop_predictors, print_results=True, output_file=True,
+    #                                          data_filename="data/output/processed_{}_{}.csv".format(
+    #                                                  filename_suffix, outcome_measure))
+    #
+    # # Stats on rates
+    # stats(histogram={"info": [
+    #     {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33},
+    #     {"data": processed_data_pd_control_rate_lme.loc[
+    #         processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
+    #      "label": "LME on PD and control patients", "alpha": .33},
+    #     {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
+    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+    #     "ylabel": "Frequency", "legend": True})
+    #
+    # stats(histogram={"info": [
+    #     {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33}],
+    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+    #     "ylabel": "Frequency", "legend": True})
+    #
+    # stats(histogram={"info": [
+    #     {"data": processed_data_pd_control_rate_lme.loc[
+    #         processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
+    #      "label": "LME on PD and control patients", "alpha": .33}],
+    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+    #     "ylabel": "Frequency", "legend": True})
+    #
+    # stats(histogram={"info": [
+    #     {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
+    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+    #     "ylabel": "Frequency", "legend": True})
 
     # Retrieve pre-organized data
-    # preprocessed_data_pd = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
-    #                                      [patient_key, time_key, base_target])
+    processed_data_pd_rate_lr = retrieve_data("data/output/processed_pd_data_RATE_LR_CONTINUOUS.csv",
+                                              [patient_key, time_key])
+    processed_data_pd_rate_lme = retrieve_data("data/output/processed_pd_data_RATE_LME_CONTINUOUS.csv",
+                                               [patient_key, time_key])
+    processed_data_pd_control_rate_lme = retrieve_data("data/output/processed_pd_control_data_RATE_LME_CONTINUOUS.csv",
+                                                       [patient_key, time_key])
 
-    # Data specific operations (cohorts=["PD", "GRPD", "GCPD"] )
-    preprocessed_data_pd = preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
-                                           data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
+    # Get slow patients from different models
+    slow_patients_lr = processed_data_pd_rate_lr.loc[processed_data_pd_rate_lr["RATE_LR_DISCRETE"] == 0, "PATNO"]
+    slow_patients_lme_pd = processed_data_pd_rate_lme.loc[processed_data_pd_rate_lme["RATE_LME_DISCRETE"] == 0, "PATNO"]
+    slow_patients_lme_pd_control = processed_data_pd_control_rate_lme.loc[
+        (processed_data_pd_control_rate_lme["RATE_LME_DISCRETE"] == 0) & (
+            processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL"), "PATNO"]
 
-    # Start outcome measure as linear mixed effects
-    outcome_measure = "RATE_LME_CONTINUOUS"
+    # Print descriptions of slow patient groups by model
+    print("LIN REG")
+    print(slow_patients_lr.describe())
+    print("\nLME WITH PD")
+    print(slow_patients_lme_pd.describe())
+    print("\nLME WITH PD AND Control")
+    print(slow_patients_lme_pd_control.describe())
+    print("\nTOTAL # OF PD PATIENTS")
+    print(processed_data_pd_rate_lr["PATNO"].size)
 
-    # Prepare data and generate outcome measure
-    processed_data_pd_rate_lme = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
-                                              outcome_measure, drop_predictors, print_results=True,
-                                              data_filename="data/output/processed_{}{}.csv".format(
-                                                      filename_suffix, outcome_measure))
-
-    # Suffix of file output names
-    filename_suffix = "pd_control_data"
-
-    # Data specific operations (cohorts=["PD", "GRPD", "GCPD"] )
-    preprocessed_data_pd_control = \
-        preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
-                        print_results=True,
-                        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
-                        data_filename="data/output/preprocessed_{}.csv".format(
-                                filename_suffix))
-
-    # Prepare data and generate outcome measure
-    processed_data_pd_control_rate_lme = process_data(preprocessed_data_pd_control, model_type, patient_key, time_key,
-                                                      base_target, outcome_measure, drop_predictors, print_results=True,
-                                                      data_filename="data/output/processed_{}{}.csv".format(
-                                                              filename_suffix, outcome_measure))
-
-    # Change outcome measure to linear regression
-    outcome_measure = "RATE_LR_CONTINUOUS"
-
-    # Suffix of file output names
-    filename_suffix = "pd_data_rate_of_progression"
-
-    # Prepare data
-    processed_data_pd_rate_lr = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
-                                             outcome_measure, drop_predictors, print_results=True,
-                                             data_filename="data/output/processed_{}{}.csv".format(
-                                                     filename_suffix, outcome_measure))
-
-    # Stats on rates
-    stats(histogram={"info": [
-        {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33},
-        {"data": processed_data_pd_control_rate_lme.loc[
-            processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
-         "label": "LME on PD and control patients", "alpha": .33},
-        {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
-        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-        "ylabel": "Frequency", "legend": True})
-
-    stats(histogram={"info": [
-        {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33}],
-        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-        "ylabel": "Frequency", "legend": True})
-
-    stats(histogram={"info": [
-        {"data": processed_data_pd_control_rate_lme.loc[
-            processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
-         "label": "LME on PD and control patients", "alpha": .33}],
-        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-        "ylabel": "Frequency", "legend": True})
-
-    stats(histogram={"info": [
-        {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
-        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-        "ylabel": "Frequency", "legend": True})
+    stats(bar={
+        "labels": ("LR vs. LME w/ PD", "LR vs. LME w/ PD & Controls", "LME w/ PD vs. LME w/ PD & Controls"),
+        "yvalues": [pd.Series(list(set(slow_patients_lr) | set(slow_patients_lme_pd))).size - pd.Series(
+            list(set(slow_patients_lr) & set(slow_patients_lme_pd))).size,
+                    pd.Series(list(set(slow_patients_lr) | set(slow_patients_lme_pd_control))).size - pd.Series(
+                        list(set(slow_patients_lr) & set(slow_patients_lme_pd_control))).size,
+                    pd.Series(list(set(slow_patients_lme_pd) | set(slow_patients_lme_pd_control))).size - pd.Series(
+                        list(set(slow_patients_lme_pd) & set(slow_patients_lme_pd_control))).size],
+        "title": "Differences Between Models in Classifying PD Patients as 'Slow'", "xlabel": "Model Pair",
+        "ylabel": "# of Non-Overlapping Patients Classified as 'Slow'"})
 
 
 # Patient key: Numeric IDs uniquely representing patients (example: "PATNO")
@@ -1007,6 +1067,19 @@ if __name__ == "__main__":
     add = []
 
     # Features not to use as predictors
+    # drop = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "INFODT_2", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG",
+    #         "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
+    #         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE",
+    #         "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
+    #         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_LR_CONTINUOUS",
+    #         "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL", "HAS_PD", "TOTAL",
+    #         "RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_SLOW",
+    #         "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_MAN",
+    #         "RATE_LR_DISCRETE", "total_st_unadj", "total_adj", "total_unadj", "total_st_adj", "total_st_unadj",
+    #         "pt3_adj", "pt3_unadj", "pt3_st_adj", "pt3_st_unadj", "pt3_nst_adj", "pt3_nst_unadj", "total_adj0",
+    #         "total_adj1", "total_adj2", "pt3_adj0", "pt3_adj1", "pt3_adj2", "total_nst_adj", "total_nst_unadj"]
+
+    # TODO: Delete
     drop = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "INFODT_2", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG",
             "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
             "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE",
@@ -1015,7 +1088,7 @@ if __name__ == "__main__":
             "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL", "HAS_PD", "TOTAL",
             "RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_SLOW",
             "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_MAN",
-            "RATE_LR_DISCRETE", "total_st_unadj", "total_adj", "total_unadj", "total_st_adj", "total_st_unadj",
+            "total_st_unadj", "total_adj", "total_unadj", "total_st_adj", "total_st_unadj",
             "pt3_adj", "pt3_unadj", "pt3_st_adj", "pt3_st_unadj", "pt3_nst_adj", "pt3_nst_unadj", "total_adj0",
             "total_adj1", "total_adj2", "pt3_adj0", "pt3_adj1", "pt3_adj2", "total_nst_adj", "total_nst_unadj"]
 
