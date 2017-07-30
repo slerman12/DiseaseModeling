@@ -56,7 +56,8 @@ def retrieve_data(filename, keys):
 
 # TODO: Consider which categorical features can have NAs eliminated through binary dummies
 # Data specific operations (Merge into one file, generate time from baseline in months, standardize feature name/values)
-def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_sc_into_bl_file_path=None,
+def preprocess_data(base_target, cohorts=None, on_off_dose="off", print_results=False,
+                    data_merged_sc_into_bl_file_path=None,
                     data_filename="preprocessed_data.csv"):
     # Import the data frames from files
     with np.warnings.catch_warnings():
@@ -118,12 +119,25 @@ def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_
     # Data for these patients
     data = data_merged_sc_into_bl[data_merged_sc_into_bl["PATNO"].isin(patients_from_selected_cohorts)]
 
-    # Only include "off" data (Exclude NUPDRS3A measurements and <6hrs since last PD med dose intake measurements)
-    data = data[data["PAG_UPDRS3"] == "NUPDRS3"]
-    data = data[data["ON_OFF_DOSE"] != 2]
+    # TODO: Check if correct differentiation between on/off
+    # On vs. Off dose
+    if on_off_dose == "off":
+        # Only include "off" data (Exclude NUPDRS3A measurements and <6hrs since last PD med dose intake measurements)
+        data = data[data["PAG_UPDRS3"] == "NUPDRS3"]
+        data = data[data["ON_OFF_DOSE"] != 2]
+    elif on_off_dose == "on":
+        # Only include "on" data (Exclude NUPDRS3A measurements and >6hrs since last PD med dose intake measurements or 
+        # "not recieving symptomatic therapy"")
+        data = data[data["PAG_UPDRS3"] == "NUPDRS3"]
+        data = data[(data["ON_OFF_DOSE"] == 2) | data["ON_OFF_DOSE"].isnull()]
 
     # Only include patients when they're not receiving symptomatic treatment
-    # pd_control_data = pd_control_data[pd_control_data["ON_OFF_DOSE"].isnull()]
+    # data = data[data["ON_OFF_DOSE"].isnull()]
+
+    # TODO: Check if this correctly differentiates between treated/untreated
+    # Add binary feature for whether patient is receiving symptomatic therapy
+    data.loc[:, "IS_TREATED"] = 1
+    data.loc[data["ON_OFF_DOSE"].isnull(), "IS_TREATED"] = 0
 
     # Make ON_OFF_DOSE binary dummies - why?
     # data = pd.get_dummies(data, columns=["ON_OFF_DOSE"])
@@ -139,13 +153,19 @@ def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_
                      "V09": 9, "V10": 10, "V11": 11, "V12": 12, "V13": 13, "ST": -1}})
 
     # Create HAS_PD column
-    data["HAS_PD"] = 0
+    data.loc[:, "HAS_PD"] = 0
     data.loc[(data["APPRDX"] == "PD") | (data["APPRDX"] == "GRPD") | (
         data["APPRDX"] == "GCPD"), "HAS_PD"] = 1
 
     # Controls have missing PDDXDT and SXDT, set to arbitrary date
     data.loc[data["HAS_PD"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
     data.loc[data["HAS_PD"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
+
+    # List of features
+    features = list(data.columns.values)
+
+    # Generate features (UPDRS subsets)
+    data = generate_updrs_subsets(data=data, features=features)
 
     # Set feature keys
     feature_keys = ["PATNO", "EVENT_ID", "INFODT", "PDDXDT", "SXDT", "BIRTHDT.x", "HAS_PD", base_target]
@@ -154,11 +174,7 @@ def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_
     data = data[
         data["PATNO"].isin(data.loc[(data["EVENT_ID"] == 0) & (data[feature_keys].notnull().all(axis=1)), "PATNO"])]
 
-    # List of features
-    features = list(data.columns.values)
-
-    # Generate features (UPDRS subsets and times)
-    data = generate_updrs_subsets(data=data, features=features)
+    # Generate features (times)
     data = generate_time(data=data, features=features, id_name="PATNO",
                          time_name="EVENT_ID", datetime_name="INFODT", birthday_name="BIRTHDT.x",
                          diagnosis_date_name="PDDXDT", first_symptom_date_name="SXDT",
@@ -168,7 +184,7 @@ def preprocess_data(base_target, cohorts=None, print_results=False, data_merged_
     data.to_csv(data_filename, index=False)
 
     # Return pd control data
-    return data
+    return data.copy()
 
 
 # Drop patients w/o BL, drop rows w/ NA at key features, generate outcome measure
@@ -229,13 +245,13 @@ def process_data(data, model_type, patient_key, time_key, base_target, outcome_m
         data.to_csv(data_filename, index=False)
 
     # Return data
-    return data
+    return data.copy()
 
 
 # TODO: Truly maximize by searching space of all feature/patient NA-less combinations
 # Automatic feature and row elimination (automatically get rid of NAs and maximize data)
 def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop_predictors=None, add_predictors=None,
-                              feature_elimination_n=None, print_results=False,
+                              feature_elimination_n=None, print_results=False, dummy_features=None, final_features=None,
                               data_filename="disease_modeling_data.csv"):
     # Initiate empty list(s) when no drop/add predictors
     if drop_predictors is None:
@@ -243,9 +259,18 @@ def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop
     if add_predictors is None:
         add_predictors = []
 
+    # Account for any dummy features generated from data set
+    if dummy_features is not None:
+        # Convert categorical data to binary dummy columns (one hot encoding)
+        data = pd.get_dummies(data, columns=dummy_features)
+
+    # Use manually selected features
+    if final_features is not None:
+        data = data[final_features]
+
     # Drop unused columns
     for column in data.keys():
-        if column in drop_predictors:
+        if column in drop_predictors and column not in add_predictors:
             if column != patient_key and column != time_key and column != outcome_measure:
                 data = data.drop(column, 1)
 
@@ -290,7 +315,7 @@ def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop
                 len(data.keys())))
 
     # Initiate progress
-    prog = Progress(0, 41, "Feature/Row Elimination", print_results)
+    prog = Progress(0, 41, "Feature/Row Elimination", print_results and feature_elimination_n is None)
 
     # Find optimal feature elimination n
     if feature_elimination_n is None:
@@ -315,12 +340,12 @@ def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop
     data.to_csv(data_filename, index=False)
 
     # Return data
-    return data
+    return data.copy()
 
 
 # Train and optimize a model with grid search
 def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=None, add_predictors=None,
-          do_grid_search=False, feature_importance_min=0.1, print_results=True, output_results=True,
+          do_grid_search=False, feature_importance_min=0.1, print_results=True, output_results=True, n_jobs=-1,
           results_filename="results.csv"):
     # Initiate empty list(s) when no drop/add predictors
     if drop_predictors is None:
@@ -328,13 +353,10 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     if add_predictors is None:
         add_predictors = []
 
-    # Initialize training data
-    training_data = data.copy()
-
     # Drop unused columns
-    for column in training_data.keys():
-        if column in drop_predictors:
-            training_data = training_data.drop(column, 1)
+    for column in data.keys():
+        if column in drop_predictors and column not in add_predictors and column != outcome_measure:
+            data = data.drop(column, 1)
 
     # Convert categorical data to binary dummy columns (one hot encoding)
     numerics = ['int16', 'int32', 'int64', 'float16', 'float32', 'float64']
@@ -342,21 +364,28 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
             data.select_dtypes(include=numerics).columns.values) + drop_predictors]
     data = pd.get_dummies(data, columns=dummy_features)
 
+    # Initialize training data
+    training_data = data.copy()
+
     # Drop unused columns
     for column in training_data.keys():
-        if column in drop_predictors:
+        if column in drop_predictors and column not in add_predictors:
             training_data = training_data.drop(column, 1)
 
     # Print data diagnostics
     if print_results:
         # Data diagnostics after feature generation
         mL.describe_data(data=data, describe=True, description="MODELING DATA DESCRIPTION:")
+        print(data[outcome_measure].describe())
 
     # Initialize output
     model_results = {}
 
     # List of predictors
     predictors = list(training_data.columns.values)
+
+    # Univariate feature selection
+    # mL.describe_data(data=data, univariate_feature_selection=[predictors, outcome_measure])
 
     # Parameters for grid search
     grid_search_params = [{"n_estimators": [50, 150, 300, 500, 750, 1000],
@@ -365,7 +394,7 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
 
     # Algorithms for model
     algs = [
-        RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2,
+        RandomForestRegressor(n_estimators=500, min_samples_split=4, min_samples_leaf=2, n_jobs=n_jobs,
                               oob_score=True) if is_regressor else RandomForestClassifier(n_estimators=500,
                                                                                           min_samples_split=25,
                                                                                           min_samples_leaf=2,
@@ -404,21 +433,13 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
         # Run grid search
         grid_search = \
             mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
-                       alg_names=alg_names,
+                       alg_names=alg_names, n_jobs=n_jobs,
                        scoring="r2" if is_regressor else "accuracy",
                        grid_search_params=grid_search_params,
                        print_results=False)["Grid Search Random Forest"].best_estimator_
 
         # Set algorithm to grid search estimator
         algs[0] = grid_search
-
-    # Get feature importances
-    feature_importances = mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
-                                     alg_names=alg_names, feature_importances=[True], print_results=False,
-                                     description=None)["Feature Importances Random Forest"]
-
-    # Set important features as top predictors
-    top_predictors = [x for x, y in feature_importances if y >= feature_importance_min]
 
     # # Ability to eliminate linear dependencies
     # # Feature importance dictionary
@@ -427,9 +448,9 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     #     fid[x] = y
     #
     # # Linear dependant features
-    # lin_dependencies = [["NP1", "NP2", "NP3", "TOTAL" if score_name != "TOTAL" else "SCORE_NOW"],
+    # lin_dependencies = [["UPDRS_I", "UPDRS_II", "UPDRS_III", "TOTAL" if score_name != "TOTAL" else "SCORE_NOW"],
     #                     ["GENDER.y_M", "GENDER.y_FNC", "GENDER.y_FC"],
-    #                     ["NP1", "NP1COG", "NP1HALL", "NP1DPRS", "NP2ANXS", "NP1APAT", "NP1DDS"]]
+    #                     ["UPDRS_I", "NP1COG", "NP1HALL", "NP1DPRS", "NP2ANXS", "NP1APAT", "NP1DDS"]]
     #
     # # Eliminate lowest ranking linearly dependant feature
     # for dep in lin_dependencies:
@@ -438,23 +459,22 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
 
     # Display metrics, including r2 score
     metrics = mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
-                         alg_names=alg_names,
-                         feature_importances=[True], base_score=[True], oob_score=[True], cross_val=[True],
+                         alg_names=alg_names, feature_importances=[True], base_score=[print_results or output_results],
+                         oob_score=[print_results or output_results], cross_val=[print_results or output_results],
                          scoring="r2", print_results=print_results)
 
     # Display mean absolute error score
     metrics.update(mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
-                              alg_names=alg_names,
-                              cross_val=[True], scoring="mean_absolute_error", description=None,
-                              print_results=print_results))
+                              alg_names=alg_names, cross_val=[print_results or output_results],
+                              scoring="neg_mean_absolute_error", description=None, print_results=print_results))
 
     # Display root mean squared error score
     metrics.update(mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
-                              alg_names=alg_names,
-                              cross_val=[True],
+                              alg_names=alg_names, cross_val=[print_results or output_results],
                               scoring="root_mean_squared_error", description=None,
                               print_results=print_results))
 
+    # Initialize accuracy metric
     metrics["Cross Validation accuracy Random Forest"] = None
 
     # Metrics for classification
@@ -475,26 +495,32 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
         #            algs=algs, alg_names=alg_names, split_confusion_matrix=[True], description=None, 
         #            print_results=print_results)
 
-    # If grid search results, print results
+    # If grid search and print results
     if print_results and do_grid_search:
         print(grid_search["Grid Search String Random Forest"])
+
+    # Get feature importances
+    feature_importances = metrics["Feature Importances Random Forest"]
+
+    # Set important features as top predictors
+    top_predictors = [x for x, y in feature_importances if y >= feature_importance_min]
 
     # Output results file
     if output_results:
         # Create blank results csv
-        pd.DataFrame(columns=["model type", "target", "base", "oob", "r2", "mes", "rmse", "accuracy",
+        pd.DataFrame(columns=["model type", "target", "base", "oob", "r2", "mae", "rmse", "accuracy",
                               "features", "importances"]).to_csv(results_filename, index=False)
 
         # Create results data frame
         results = pd.DataFrame(
-                columns=["model type" "target", "base", "oob", "r2", "mes", "rmse", "accuracy", "features",
-                         "importances"])
+                columns=["model type", "target", "base", "oob", "r2", "mae", "rmse", "accuracy",
+                         "features", "importances"])
         results.loc[0, "model type"] = model_type
         results.loc[0, "target"] = outcome_measure
         results.loc[0, "base"] = metrics["Base Score Random Forest"]
         results.loc[0, "oob"] = metrics["OOB Score Random Forest"]
         results.loc[0, "r2"] = metrics["Cross Validation r2 Random Forest"]
-        results.loc[0, "mes"] = metrics["Cross Validation mean_absolute_error Random Forest"]
+        results.loc[0, "mae"] = metrics["Cross Validation neg_mean_absolute_error Random Forest"]
         results.loc[0, "rmse"] = metrics["Cross Validation root_mean_squared_error Random Forest"]
         results.loc[0, "accuracy"] = metrics["Cross Validation accuracy Random Forest"]
         feature_importances = list(metrics["Feature Importances Random Forest"])
@@ -511,24 +537,25 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     # Set results
     model_results["Top Predictors"] = top_predictors
     model_results["Model"] = algs[0]
+    model_results["Dummy Features"] = dummy_features
 
     # Return model_results
     return model_results
 
 
-# Generate NP1, NP2, and NP3
+# Generate UPDRS_I, UPDRS_II, and UPDRS_III
 def generate_updrs_subsets(data, features):
     # set features
-    new_features = ["NP1", "NP2", "NP3", "UPDRS_II_AND_III"]
+    new_features = ["UPDRS_I", "UPDRS_II", "UPDRS_III", "UPDRS_II_AND_III"]
     for feature in new_features:
         if feature not in features:
             features.append(feature)
 
     # Sum UPDRS subsets
-    data["NP1"] = data.filter(regex="NP1.*").sum(axis=1)
-    data["NP2"] = data.filter(regex="NP2.*").sum(axis=1)
-    data["NP3"] = data.filter(regex="NP3.*").sum(axis=1)
-    data["UPDRS_II_AND_III"] = data["NP2"] + data["NP3"]
+    data.loc[:, "UPDRS_I"] = data.filter(regex="NP1.*").sum(axis=1)
+    data.loc[:, "UPDRS_II"] = data.filter(regex="NP2.*").sum(axis=1)
+    data.loc[:, "UPDRS_III"] = data.filter(regex="NP3.*").sum(axis=1)
+    data.loc[:, "UPDRS_II_AND_III"] = data["UPDRS_II"] + data["UPDRS_III"]
 
     # Return new data
     return data
@@ -547,17 +574,17 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
     data = data[data[datetime_name].notnull()]
 
     # Initialize columns
-    data["TIME_FROM_BL"] = -1
-    data["AGE"] = -1
-    data["TIME_SINCE_DIAGNOSIS"] = -1
-    data["TIME_SINCE_FIRST_SYMPTOM"] = -1
+    data.loc[:, "TIME_FROM_BL"] = -1
+    data.loc[:, "AGE"] = -1
+    data.loc[:, "TIME_SINCE_DIAGNOSIS"] = -1
+    data.loc[:, "TIME_SINCE_FIRST_SYMPTOM"] = -1
 
     # Convert dates to date times
-    data[datetime_name] = pd.to_datetime(data[datetime_name])
-    data[birthday_name] = pd.to_datetime(data[birthday_name])
-    data[datetime_name] = pd.to_datetime(data[datetime_name])
-    data[diagnosis_date_name] = pd.to_datetime(data[diagnosis_date_name])
-    data[first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
+    data.loc[:, datetime_name] = pd.to_datetime(data[datetime_name])
+    data.loc[:, birthday_name] = pd.to_datetime(data[birthday_name])
+    data.loc[:, datetime_name] = pd.to_datetime(data[datetime_name])
+    data.loc[:, diagnosis_date_name] = pd.to_datetime(data[diagnosis_date_name])
+    data.loc[:, first_symptom_date_name] = pd.to_datetime(data[first_symptom_date_name])
 
     # Initialize progress measures
     prog = Progress(0, len(data[id_name].unique()), "Generating Times", progress)
@@ -568,19 +595,19 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
         now_date = data.loc[data[id_name] == data_id, datetime_name]
         baseline_date = data.loc[(data[id_name] == data_id) & (data[time_name] == 0), datetime_name].min()
         data.loc[data[id_name] == data_id, "TIME_FROM_BL"] = (now_date - baseline_date).apply(
-                lambda x: int((x / np.timedelta64(1, 'D')) / 30))
+                lambda x: (x / np.timedelta64(1, 'D')) / 365)
 
         # Update progress
         prog.update_progress()
 
-    # Set age, months from diagnosis, and months from first symptom
-    data["AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 30)
+    # Set age in years, years from diagnosis, and years from first symptom
+    data.loc[:, "AGE"] = (data[datetime_name] - data[birthday_name]).apply(lambda x: (x / np.timedelta64(1, 'D')) / 365)
     data.loc[data["HAS_PD"] == 1, "TIME_SINCE_DIAGNOSIS"] = (
         data.loc[data["HAS_PD"] == 1, datetime_name] - data.loc[data["HAS_PD"] == 1, diagnosis_date_name]).apply(
-            lambda x: (x / np.timedelta64(1, 'D')) / 30)
+            lambda x: (x / np.timedelta64(1, 'D')) / 365)
     data.loc[data["HAS_PD"] == 1, "TIME_SINCE_FIRST_SYMPTOM"] = (
         data.loc[data["HAS_PD"] == 1, datetime_name] - data.loc[data["HAS_PD"] == 1, first_symptom_date_name]).apply(
-            lambda x: (x / np.timedelta64(1, 'D')) / 30)
+            lambda x: (x / np.timedelta64(1, 'D')) / 365)
 
     # Return data
     return data
@@ -696,7 +723,8 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
     if target == "RATE_LME_CONTINUOUS" \
             or target == "RATE_LME_INCLUSION/EXCLUSION_SLOW" \
             or target == "RATE_LME_INCLUSION/EXCLUSION_FAST" \
-            or target == "RATE_LME_DISCRETE":
+            or target == "RATE_LME_DISCRETE" \
+            or target == "RATE_LME_TX_VS_NO_TX_CONTINUOUS":
         # Linear mixed-effects model w/ random slopes/random intercepts
         lme = sm.MixedLM.from_formula("{} ~ {}".format(score_name, time_name), data, re_formula="~" + time_name,
                                       groups=data[id_name])
@@ -811,6 +839,11 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
                 data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
         data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
 
+        if cutoff is not None:
+            # Label manually selected cutoff progression
+            data.loc[data["RATE_LR_CONTINUOUS"] < cutoff, "RATE_LR_INCLUSION/EXCLUSION_MAN"] = 0
+            data.loc[data["RATE_LR_CONTINUOUS"] >= cutoff, "RATE_LR_INCLUSION/EXCLUSION_MAN"] = 1
+
         # Return new data
         return data
 
@@ -872,89 +905,89 @@ def stats(histogram=None, bar=None, show=True):
 
 # Histograms of rate frequencies for LME using data of all patients vs of PD patients, compared with LR
 def histograms_rate_lme_types_lr(patient_key, time_key, base_target, drop_predictors=None):
-    # # Initiate empty list when no drop predictors
-    # if drop_predictors is None:
-    #     drop_predictors = []
-    #
-    # # Select rate of progression model
-    # model_type = "Rate of Progression"
-    #
-    # # Suffix of file output names
-    # filename_suffix = "pd_data"
-    #
-    # # Retrieve pre-organized data
-    # # preprocessed_data_pd = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
-    # #                                      [patient_key, time_key, base_target])
-    #
-    # # Data specific operations (ex. cohorts=["PD", "GRPD", "GCPD"] )
-    # preprocessed_data_pd = preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
-    #                                        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
-    #                                        data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
-    #
-    # # Start outcome measure as linear mixed effects
-    # outcome_measure = "RATE_LME_CONTINUOUS"
-    #
-    # # Prepare data and generate outcome measure
-    # processed_data_pd_rate_lme = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
-    #                                           outcome_measure, drop_predictors, print_results=True, output_file=True,
-    #                                           data_filename="data/output/processed_{}_{}.csv".format(
-    #                                                   filename_suffix, outcome_measure))
-    #
-    # # Suffix of file output names
-    # filename_suffix = "pd_control_data"
-    #
-    # # Data specific operations (ex. cohorts=["PD", "GRPD", "GCPD"] )
-    # preprocessed_data_pd_control = \
-    #     preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD", "CONTROL"], print_results=True,
-    #                     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
-    #                     data_filename="data/output/preprocessed_{}.csv".format(
-    #                             filename_suffix))
-    #
-    # # Prepare data and generate outcome measure
-    # processed_data_pd_control_rate_lme = process_data(preprocessed_data_pd_control, model_type, patient_key, time_key,
-    #                                                   base_target, outcome_measure, drop_predictors, print_results=True,
-    #                                                   output_file=True,
-    #                                                   data_filename="data/output/processed_{}_{}.csv".format(
-    #                                                       filename_suffix, outcome_measure))
-    #
-    # # Change outcome measure to linear regression
-    # outcome_measure = "RATE_LR_CONTINUOUS"
-    #
-    # # Suffix of file output names
-    # filename_suffix = "pd_data"
-    #
-    # # Prepare data
-    # processed_data_pd_rate_lr = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
-    #                                          outcome_measure, drop_predictors, print_results=True, output_file=True,
-    #                                          data_filename="data/output/processed_{}_{}.csv".format(
-    #                                                  filename_suffix, outcome_measure))
-    #
-    # # Stats on rates
-    # stats(histogram={"info": [
-    #     {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33},
-    #     {"data": processed_data_pd_control_rate_lme.loc[
-    #         processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
-    #      "label": "LME on PD and control patients", "alpha": .33},
-    #     {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
-    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-    #     "ylabel": "Frequency", "legend": True})
-    #
-    # stats(histogram={"info": [
-    #     {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33}],
-    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-    #     "ylabel": "Frequency", "legend": True})
-    #
-    # stats(histogram={"info": [
-    #     {"data": processed_data_pd_control_rate_lme.loc[
-    #         processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
-    #      "label": "LME on PD and control patients", "alpha": .33}],
-    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-    #     "ylabel": "Frequency", "legend": True})
-    #
-    # stats(histogram={"info": [
-    #     {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
-    #     "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
-    #     "ylabel": "Frequency", "legend": True})
+    # Initiate empty list when no drop predictors
+    if drop_predictors is None:
+        drop_predictors = []
+
+    # Select rate of progression model
+    model_type = "Rate of Progression"
+
+    # Suffix of file output names
+    filename_suffix = "pd_data"
+
+    # Retrieve pre-organized data
+    # preprocessed_data_pd = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
+    #                                      [patient_key, time_key, base_target])
+
+    # Data specific operations (ex. cohorts=["PD", "GRPD", "GCPD"] )
+    preprocessed_data_pd = preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
+                                           data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
+                                           data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
+
+    # Start outcome measure as linear mixed effects
+    outcome_measure = "RATE_LME_CONTINUOUS"
+
+    # Prepare data and generate outcome measure
+    processed_data_pd_rate_lme = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
+                                              outcome_measure, drop_predictors, print_results=True, output_file=True,
+                                              data_filename="data/output/processed_{}_{}.csv".format(
+                                                      filename_suffix, outcome_measure))
+
+    # Suffix of file output names
+    filename_suffix = "pd_control_data"
+
+    # Data specific operations (ex. cohorts=["PD", "GRPD", "GCPD"] )
+    preprocessed_data_pd_control = \
+        preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD", "CONTROL"], print_results=True,
+                        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
+                        data_filename="data/output/preprocessed_{}.csv".format(
+                                filename_suffix))
+
+    # Prepare data and generate outcome measure
+    processed_data_pd_control_rate_lme = process_data(preprocessed_data_pd_control, model_type, patient_key, time_key,
+                                                      base_target, outcome_measure, drop_predictors, print_results=True,
+                                                      output_file=True,
+                                                      data_filename="data/output/processed_{}_{}.csv".format(
+                                                              filename_suffix, outcome_measure))
+
+    # Change outcome measure to linear regression
+    outcome_measure = "RATE_LR_CONTINUOUS"
+
+    # Suffix of file output names
+    filename_suffix = "pd_data"
+
+    # Prepare data
+    processed_data_pd_rate_lr = process_data(preprocessed_data_pd, model_type, patient_key, time_key, base_target,
+                                             outcome_measure, drop_predictors, print_results=True, output_file=True,
+                                             data_filename="data/output/processed_{}_{}.csv".format(
+                                                     filename_suffix, outcome_measure))
+
+    # Stats on rates
+    stats(histogram={"info": [
+        {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33},
+        {"data": processed_data_pd_control_rate_lme.loc[
+            processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
+         "label": "LME on PD and control patients", "alpha": .33},
+        {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
+
+    stats(histogram={"info": [
+        {"data": processed_data_pd_rate_lme["RATE_LME_CONTINUOUS"], "label": "LME on PD patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
+
+    stats(histogram={"info": [
+        {"data": processed_data_pd_control_rate_lme.loc[
+            processed_data_pd_control_rate_lme["APPRDX"] != "CONTROL", "RATE_LME_CONTINUOUS"],
+         "label": "LME on PD and control patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
+
+    stats(histogram={"info": [
+        {"data": processed_data_pd_rate_lr["RATE_LR_CONTINUOUS"], "label": "LR on PD patients", "alpha": .33}],
+        "title": "Frequency of Rates for PD Patients", "xlabel": "Rate (UPDRS / Time)",
+        "ylabel": "Frequency", "legend": True})
 
     # Retrieve pre-organized data
     processed_data_pd_rate_lr = retrieve_data("data/output/processed_pd_data_RATE_LR_CONTINUOUS.csv",
@@ -981,16 +1014,17 @@ def histograms_rate_lme_types_lr(patient_key, time_key, base_target, drop_predic
     print("\nTOTAL # OF PD PATIENTS")
     print(processed_data_pd_rate_lr["PATNO"].size)
 
+    # Stats on non overlapping PD patients between different model types
     stats(bar={
         "labels": ("LR vs. LME w/ PD", "LR vs. LME w/ PD & Controls", "LME w/ PD vs. LME w/ PD & Controls"),
         "yvalues": [pd.Series(list(set(slow_patients_lr) | set(slow_patients_lme_pd))).size - pd.Series(
-            list(set(slow_patients_lr) & set(slow_patients_lme_pd))).size,
+                list(set(slow_patients_lr) & set(slow_patients_lme_pd))).size,
                     pd.Series(list(set(slow_patients_lr) | set(slow_patients_lme_pd_control))).size - pd.Series(
-                        list(set(slow_patients_lr) & set(slow_patients_lme_pd_control))).size,
+                            list(set(slow_patients_lr) & set(slow_patients_lme_pd_control))).size,
                     pd.Series(list(set(slow_patients_lme_pd) | set(slow_patients_lme_pd_control))).size - pd.Series(
-                        list(set(slow_patients_lme_pd) & set(slow_patients_lme_pd_control))).size],
+                            list(set(slow_patients_lme_pd) & set(slow_patients_lme_pd_control))).size],
         "title": "Differences Between Models in Classifying PD Patients as 'Slow'", "xlabel": "Model Pair",
-        "ylabel": "# of Non-Overlapping Patients Classified as 'Slow'"})
+        "ylabel": "# of Non-Overlapping PD Patients Classified as 'Slow'"})
 
 
 # Patient key: Numeric IDs uniquely representing patients (example: "PATNO")
@@ -1003,7 +1037,8 @@ def histograms_rate_lme_types_lr(patient_key, time_key, base_target, drop_predic
 # Drop predictors: Explicit features not to use as predictors, regardless of ranking of importance
 # Filename suffix: Suffix of file output names
 def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_measure, add_predictors=None,
-        drop_predictors=None, filename_suffix="disease_modeling"):
+        drop_predictors=None, on_off_dose="off", filename_suffix="disease_modeling",
+        data_merged_sc_into_bl_file_path=None):
     # Initiate empty list(s) when no drop/add predictors
     if add_predictors is None:
         add_predictors = []
@@ -1012,49 +1047,47 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
 
     # Data specific operations (cohorts=["PD", "GRPD", "GCPD"] )
     preprocessed_data = preprocess_data(base_target, cohorts=["PD", "GRPD", "GCPD"], print_results=True,
-                                        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv",
-                                        data_filename="preprocessed_{}.csv".format(filename_suffix))
+                                        data_merged_sc_into_bl_file_path=data_merged_sc_into_bl_file_path,
+                                        on_off_dose=on_off_dose,
+                                        data_filename="data/output/preprocessed_{}.csv".format(filename_suffix))
 
     # Retrieve pre-organized data
-    preprocessed_data = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
-                                      [patient_key, time_key, base_target])
-
-    # Change filename suffix to include generated outcome measure
-    filename_suffix += outcome_measure
+    # preprocessed_data = retrieve_data("data/output/preprocessed_{}.csv".format(filename_suffix),
+    #                                   [patient_key, time_key, base_target])
 
     # Prepare data and generate outcome measure
     processed_data = process_data(preprocessed_data, model_type, patient_key, time_key, base_target, outcome_measure,
-                                  drop_predictors, print_results=True,
-                                  data_filename="data/output/processed_{}.csv".format(filename_suffix, outcome_measure))
+                                  drop_predictors, print_results=True, output_file=True,
+                                  data_filename="data/output/processed_{}_{}_{}.csv".format(
+                                          filename_suffix, outcome_measure, base_target))
 
     # Maximize data dimensions w/o NAs
     no_nulls_data = eliminate_nulls_maximally(processed_data, patient_key, time_key, outcome_measure, drop_predictors,
-                                              feature_elimination_n=True,
-                                              data_filename="data/output/no_nulls_data_{}.csv".format(filename_suffix))
-
-    # Univariate feature selection
-    mL.describe_data(data=no_nulls_data,
-                     univariate_feature_selection=[list(no_nulls_data.drop(outcome_measure, axis=1).columns.values),
-                                                   outcome_measure])
+                                              print_results=True,
+                                              data_filename="data/output/no_nulls_{}_{}_{}.csv".format(
+                                                      filename_suffix, outcome_measure, base_target))
 
     # Primary run of model
-    top_predictors = \
-        model(no_nulls_data, model_type, outcome_measure, is_regressor, drop_predictors, do_grid_search=False,
-              feature_importance_min=0.001, print_results=True, output_results=False)[
-            "Top Predictors"]
+    primary_estimator = model(no_nulls_data, model_type, outcome_measure, is_regressor, drop_predictors,
+                              do_grid_search=True, feature_importance_min=0.001, print_results=False,
+                              output_results=False)
 
     # Final list of features: top predictors + keys + target
     final_features = list(
-            set(top_predictors).union(add_predictors).union([patient_key, time_key, outcome_measure]))
+        set(primary_estimator["Top Predictors"]).union(add_predictors).union([patient_key, time_key, outcome_measure]))
 
     # Eliminate nulls maximally from processed data without unused features
-    final_data = eliminate_nulls_maximally(processed_data[final_features], patient_key, time_key, outcome_measure,
-                                           drop_predictors, feature_elimination_n=None, print_results=True,
-                                           data_filename="data/output/final_data_{}.csv".format(filename_suffix))
+    final_data = eliminate_nulls_maximally(processed_data, patient_key, time_key, outcome_measure,
+                                           drop_predictors, feature_elimination_n=1, print_results=True,
+                                           dummy_features=primary_estimator["Dummy Features"],
+                                           final_features=final_features,
+                                           data_filename="data/output/final_data_{}_{}_{}.csv".format(
+                                                   filename_suffix, outcome_measure, base_target))
 
     # Run model using top predictors
-    estimator = model(final_data, model_type, outcome_measure, is_regressor, drop_predictors, do_grid_search=False,
-                      results_filename="data/output/results_{}.csv".format(filename_suffix))["Model"]
+    estimator = model(final_data, model_type, outcome_measure, is_regressor, drop_predictors, do_grid_search=True,
+                      print_results=True, results_filename="data/output/results_{}_{}_{}.csv".format(
+                        filename_suffix, outcome_measure, base_target))["Model"]
 
 
 # Main method
@@ -1067,35 +1100,75 @@ if __name__ == "__main__":
     add = []
 
     # Features not to use as predictors
-    # drop = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "INFODT_2", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG",
-    #         "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
-    #         "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE",
-    #         "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-    #         "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_LR_CONTINUOUS",
-    #         "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL", "HAS_PD", "TOTAL",
-    #         "RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_SLOW",
-    #         "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_MAN",
-    #         "RATE_LR_DISCRETE", "total_st_unadj", "total_adj", "total_unadj", "total_st_adj", "total_st_unadj",
-    #         "pt3_adj", "pt3_unadj", "pt3_st_adj", "pt3_st_unadj", "pt3_nst_adj", "pt3_nst_unadj", "total_adj0",
-    #         "total_adj1", "total_adj2", "pt3_adj0", "pt3_adj1", "pt3_adj2", "total_nst_adj", "total_nst_unadj"]
-
-    # TODO: Delete
     drop = ["PATNO", "EVENT_ID", "INFODT", "INFODT.x", "INFODT_2", "DIAGNOSIS", "ORIG_ENTRY", "LAST_UPDATE", "PRIMDIAG",
             "COMPLT", "INITMDDT", "INITMDVS", "RECRUITMENT_CAT", "IMAGING_CAT", "ENROLL_DATE", "ENROLL_CAT",
             "ENROLL_STATUS", "BIRTHDT.x", "GENDER.x", "GENDER", "CNO", "PAG_UPDRS3", "TIME_NOW", "SCORE_FUTURE",
             "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
-            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "TIME_SINCE_DIAGNOSIS", "RATE_LR_CONTINUOUS",
-            "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL", "HAS_PD", "TOTAL",
+            "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "RATE_LR_CONTINUOUS",
+            "DVT_SFTANIM", "DVT_SDM", "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL",
             "RATE_LME_CONTINUOUS", "RATE_LME_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_SLOW",
             "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_MAN",
-            "total_st_unadj", "total_adj", "total_unadj", "total_st_adj", "total_st_unadj",
+            "RATE_LR_DISCRETE", "total_st_unadj", "total_adj", "total_unadj", "total_st_adj", "total_st_unadj",
             "pt3_adj", "pt3_unadj", "pt3_st_adj", "pt3_st_unadj", "pt3_nst_adj", "pt3_nst_unadj", "total_adj0",
-            "total_adj1", "total_adj2", "pt3_adj0", "pt3_adj1", "pt3_adj2", "total_nst_adj", "total_nst_unadj"]
+            "total_adj1", "total_adj2", "pt3_adj0", "pt3_adj1", "pt3_adj2", "total_nst_adj", "total_nst_unadj",
+            "RATE_LME_DISCRETE", "RATE_LR_INCLUSION/EXCLUSION_MAN"]
 
     # Histograms of rate frequencies for LME using data of all patients vs of PD patients, compared with LR
-    histograms_rate_lme_types_lr(patient_key="PATNO", time_key="TIME_FROM_BL", base_target="TOTAL",
-                                 drop_predictors=drop)
+    # histograms_rate_lme_types_lr(patient_key="PATNO", time_key="TIME_FROM_BL", base_target="TOTAL",
+    #                              drop_predictors=drop)
+
+    # Predicting rate of change of TOTAL w/ LR, LME, and LME Tx/No-Tx
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="TOTAL", outcome_measure="RATE_LR_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="TOTAL", outcome_measure="RATE_LME_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
     # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
-    #     base_target="TOTAL", outcome_measure="RATE_LR_CONTINUOUS", drop_predictors=drop,
-    #     filename_suffix="pd_data")
+    #     base_target="TOTAL", outcome_measure="RATE_LME_TX_VS_NO_TX_CONTINUOUS", drop_predictors=drop,
+    #     on_off_dose="on", filename_suffix="pd_on_data",
+    #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    # Predicting rate of change of UPDRS_II w/ LR, LME, and LME Tx/No-Tx
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="UPDRS_II", outcome_measure="RATE_LR_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="UPDRS_II", outcome_measure="RATE_LME_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+    #     base_target="UPDRS_II", outcome_measure="RATE_LME_TX_VS_NO_TX_CONTINUOUS", drop_predictors=drop,
+    #     on_off_dose="on", filename_suffix="pd_on_data",
+    #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    # Predicting rate of change of UPDRS_III w/ LR, LME, and LME Tx/No-Tx
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="UPDRS_III", outcome_measure="RATE_LR_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+    #     base_target="UPDRS_III", outcome_measure="RATE_LME_TX_VS_NO_TX_CONTINUOUS", drop_predictors=drop,
+    #     on_off_dose="on", filename_suffix="pd_on_data",
+    #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    # Predicting rate of change of UPDRS_II_AND_III w/ LR, LME, and LME Tx/No-Tx
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="UPDRS_II_AND_III", outcome_measure="RATE_LR_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+        base_target="UPDRS_II_AND_III", outcome_measure="RATE_LME_CONTINUOUS", drop_predictors=drop,
+        filename_suffix="pd_off_data", data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="Rate of Progression", is_regressor=True,
+    #     base_target="UPDRS_II_AND_III", outcome_measure="RATE_LME_TX_VS_NO_TX_CONTINUOUS", drop_predictors=drop,
+    #     on_off_dose="on", filename_suffix="pd_on_data",
+    #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")

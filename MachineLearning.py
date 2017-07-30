@@ -1,6 +1,6 @@
-from sklearn import preprocessing, cross_validation
+from sklearn import preprocessing
 from sklearn.feature_selection import SelectKBest, f_classif
-from sklearn.grid_search import GridSearchCV
+from sklearn.model_selection import GridSearchCV, cross_val_score, train_test_split
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score, mean_absolute_error, \
     mean_squared_error, median_absolute_error, r2_score
 from sklearn.ensemble import VotingClassifier
@@ -96,7 +96,7 @@ def clean_data(data, encode_auto=None, encode_man=None, fillna=None, scale_featu
 
 def metrics(data, predictors, target, algs, alg_names, feature_importances=None, base_score=None, oob_score=None,
             cross_val=None, folds=5, scoring="accuracy", split_accuracy=None, split_classification_report=None,
-            split_confusion_matrix=None, plot=True, grid_search_params=None, print_results=False,
+            split_confusion_matrix=None, plot=True, grid_search_params=None, n_jobs=-1, print_results=False,
             feature_dictionary=None, description="METRICS:"):
     # Output dictionary
     output_dict = {}
@@ -111,7 +111,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         output_dict["Feature Importances " + name] = sorted(fi, key=lambda x: x[1])
         if print_results:
             print("Feature Importances [" + name + "]")
-            for feature, imp in sorted(fi, key=lambda x: x[1]):
+            for feature, imp in output_dict["Feature Importances " + name]:
                 print(feature, imp)
 
     # Feature dictionary
@@ -137,19 +137,20 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         if print_results:
             print("OOB Score: {} [{}]".format(score, name))
 
+    # TODO: Update to newest model_selection sklearn module
     # Cross validation
     def print_cross_val(alg, name):
 
         if scoring == "root_mean_squared_error":
-            scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds,
-                                                      scoring="mean_squared_error")
+            scores = cross_val_score(alg, data[predictors], data[target], cv=folds, scoring="neg_mean_squared_error",
+                                     n_jobs=n_jobs)
             output_dict["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
                     abs(scores.mean()) ** 0.5, scores.std() ** 0.5)
             if print_results:
                 print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()) ** 0.5,
                                                                                  scores.std() ** 0.5, name, scoring))
         else:
-            scores = cross_validation.cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring)
+            scores = cross_val_score(alg, data[predictors], data[target], cv=folds, scoring=scoring, n_jobs=n_jobs)
             output_dict["Cross Validation {} ".format(scoring) + name] = "{:0.2f} (+/- {:0.2f})".format(
                     abs(scores.mean()),
                     scores.std())
@@ -162,11 +163,11 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
         y_pred = alg.fit(X_train, y_train).predict(X_test)
         if scoring == "accuracy":
             print("{}: {:0.2f} [{}] ({})".format(split_name, accuracy_score(y_test, y_pred), name, scoring))
-        elif scoring == "mean_absolute_error":
+        elif scoring == "mean_absolute_error" or "neg_mean_absolute_error":
             print("{}: {:0.2f} [{}] ({})".format(split_name, mean_absolute_error(y_test, y_pred), name, scoring))
         elif scoring == "root_mean_squared_error":
             print("{}: {:0.2f} [{}] ({})".format(split_name, mean_squared_error(y_test, y_pred) ** 0.5, name, scoring))
-        elif scoring == "mean_squared_error":
+        elif scoring == "mean_squared_error" or "neg_mean_squared_error":
             print("{}: {:0.2f} [{}] ({})".format(split_name, mean_squared_error(y_test, y_pred), name, scoring))
         elif scoring == "median_absolute_error":
             print("{}: {:0.2f} [{}] ({})".format(split_name, median_absolute_error(y_test, y_pred), name, scoring))
@@ -226,11 +227,11 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     def print_grid_search(alg, name, params):
         # Run grid search
         if scoring == "root_mean_squared_error":
-            grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring="mean_squared_error",
-                                       verbose=1 if print_results else 0)
+            grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring="neg_mean_squared_error",
+                                       verbose=1 if print_results else 0, n_jobs=n_jobs)
         else:
             grid_search = GridSearchCV(estimator=alg, cv=folds, param_grid=params, scoring=scoring,
-                                       verbose=1 if print_results else 0)
+                                       verbose=1 if print_results else 0, n_jobs=n_jobs)
         grid_search.fit(data[predictors], data[target])
 
         if print_results:
@@ -315,7 +316,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     # If split is needed
     if split_accuracy is not None or split_classification_report is not None or split_confusion_matrix is not None:
         # Split the data into a training set and a test set
-        X_train, X_test, y_train, y_test = cross_validation.train_test_split(data[predictors], data[target],
+        X_train, X_test, y_train, y_test = train_test_split(data[predictors], data[target],
                                                                              test_size=1.0 / folds)
 
         # Print ratio of split
