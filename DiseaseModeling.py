@@ -431,15 +431,17 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     # If grid search needs to be run
     if do_grid_search:
         # Run grid search
-        grid_search = \
-            mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
-                       alg_names=alg_names, n_jobs=n_jobs,
-                       scoring="r2" if is_regressor else "accuracy",
-                       grid_search_params=grid_search_params,
-                       print_results=False)["Grid Search Random Forest"].best_estimator_
+        grid_search = mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
+                                 alg_names=alg_names, n_jobs=n_jobs,
+                                 scoring="r2" if is_regressor else "accuracy",
+                                 grid_search_params=grid_search_params,
+                                 print_results=print_results)
+
+        # Get best estimator
+        grid_search_estimator = grid_search["Grid Search Random Forest"].best_estimator_
 
         # Set algorithm to grid search estimator
-        algs[0] = grid_search
+        algs[0] = grid_search_estimator
 
     # # Ability to eliminate linear dependencies
     # # Feature importance dictionary

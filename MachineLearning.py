@@ -248,8 +248,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
             grid_search_string = "Grid Search [{}]\n{}\nCross Validation: {} ({})"
             if scoring == "root_mean_squared_error":
                 output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
-                                                                                      abs(
-                                                                                              grid_search.best_score_) ** 0.5,
+                                                                                      abs(grid_search.best_score_) ** 0.5,
                                                                                       scoring)
             else:
                 output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
