@@ -243,17 +243,16 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                 print("Cross Validation: {} ({})".format(abs(grid_search.best_score_) ** 0.5, scoring))
             else:
                 print("Cross Validation: {} ({})".format(abs(grid_search.best_score_), scoring))
+
+        output_dict["Grid Search " + name] = grid_search
+        grid_search_string = "Grid Search [{}]\n{}\nCross Validation: {} ({})"
+        if scoring == "root_mean_squared_error":
+            output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
+                                                                                  abs(grid_search.best_score_) ** 0.5,
+                                                                                  scoring)
         else:
-            output_dict["Grid Search " + name] = grid_search
-            grid_search_string = "Grid Search [{}]\n{}\nCross Validation: {} ({})"
-            if scoring == "root_mean_squared_error":
-                output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
-                                                                                      abs(grid_search.best_score_) ** 0.5,
-                                                                                      scoring)
-            else:
-                output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
-                                                                                      abs(grid_search.best_score_),
-                                                                                      scoring)
+            output_dict["Grid Search String " + name] = grid_search_string.format(name, grid_search.best_params_,
+                                                                                  abs(grid_search.best_score_), scoring)
 
     # Print description of metrics
     if print_results and (description is not None):
@@ -316,7 +315,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
     if split_accuracy is not None or split_classification_report is not None or split_confusion_matrix is not None:
         # Split the data into a training set and a test set
         X_train, X_test, y_train, y_test = train_test_split(data[predictors], data[target],
-                                                                             test_size=1.0 / folds)
+                                                            test_size=1.0 / folds)
 
         # Print ratio of split
         split_name = "{:g}/{:g} Split: ".format(100 - 100 / folds, 100 / folds)

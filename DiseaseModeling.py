@@ -450,7 +450,7 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     #     fid[x] = y
     #
     # # Linear dependant features
-    # lin_dependencies = [["UPDRS_I", "UPDRS_II", "UPDRS_III", "TOTAL" if score_name != "TOTAL" else "SCORE_NOW"],
+    # lin_dependencies = [["UPDRS_I", "UPDRS_II", "UPDRS_III", "TOTAL", "SCORE_NOW" if base_target == "TOTAL"],
     #                     ["GENDER.y_M", "GENDER.y_FNC", "GENDER.y_FC"],
     #                     ["UPDRS_I", "NP1COG", "NP1HALL", "NP1DPRS", "NP2ANXS", "NP1APAT", "NP1DDS"]]
     #
