@@ -537,10 +537,11 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
                               alg_names=alg_names, cross_val=[print_results or output_results],
                               scoring="r2", print_results=print_results))
 
-    # Display precision score
-    metrics.update(mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
-                              alg_names=alg_names, cross_val=[print_results or output_results],
-                              scoring=precision_scorer, description=None, print_results=print_results))
+    if optimize_precision:
+        # Display precision score
+        metrics.update(mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
+                                  alg_names=alg_names, cross_val=[print_results or output_results],
+                                  scoring=precision_scorer, description=None, print_results=print_results))
 
     # Display mean absolute error score
     metrics.update(mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
@@ -1261,12 +1262,7 @@ if __name__ == "__main__":
 
     # TODO: Consider features that have nulls but should be included with binary dummies
     # Features to add as predictors regardless of importance ranking
-    # add = ["Prothrombin Time", "APTT-QT", "Monocytes", "Eosinophils", "Basophils", "Platelets", "Neutrophils (%)",
-    #        "Lymphocytes (%)", "Monocytes (%)", "Eosinophils (%)", "Basophils (%)", "Hematocrit", "RBC", "Hemoglobin",
-    #        "WBC", "RBC Morphology", "Neutrophils", "Lymphocytes", "Total Bilirubin", "Serum Glucose", "Total Protein",
-    #        "Albumin-QT", "Alkaline Phosphatase", "Serum Sodium", "Serum Potassium", "Serum Bicarbonate",
-    #        "Serum Chloride", "Calcium (EDTA)", "Creatinine (Rate Blanked)", "ALT (SGPT)", "AST (SGOT)", "Urea Nitrogen",
-    #        "Serum Uric Acid"]
+    # add = []
 
     add = []
 
@@ -1303,13 +1299,13 @@ if __name__ == "__main__":
 
 
     # Retrieve preprocessed data (treated and untreated, off dose, pd patients))
-    preprocessed = retrieve_data("data/output/preprocessed_untreated_off_pd_data.csv",
-                                 ["PATNO", "TIME_FROM_BL", "TOTAL"])
+    # preprocessed = retrieve_data("data/output/preprocessed_untreated_off_pd_data.csv",
+    #                              ["PATNO", "TIME_FROM_BL", "TOTAL"])
 
     # Describe UPDRS parts
     # print(preprocessed["UPDRS_I"].describe())
     # print(preprocessed["UPDRS_II"].describe())
-    print(preprocessed["UPDRS_III"].describe())
+    # print(preprocessed["UPDRS_III"].describe())
 
     # Print add and drop features
     # print("\nADD FEATURES:\n{}".format(add))
@@ -1318,61 +1314,21 @@ if __name__ == "__main__":
     # Retrieve Jihoon's LME data for "post_lme_data"
     # lme_data = retrieve_data('data/output/updrs_lme.csv', keys=["PATNO"])
 
-    # Run rate of progression, lme, PD patients, untreated, manually selected cutoff range, on target UPDRS PART III
-    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
-    #     base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
-    #     drop_predictors=drop, filename_suffix="pd_cutoff_-3_data", do_grid_search=True, treated_untreated="untreated",
-    #     on_off_dose="off", cutoff=-3, balance_classes=True, feature_elimination_n=0.02,
-    #     cohorts=["PD"], post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
-
+    # Rate of Progression
     # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
     #     base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
     #     drop_predictors=drop, do_grid_search=True, treated_untreated="untreated",
-    #     on_off_dose="off", cutoff=-2, balance_classes=True, feature_elimination_n=0.02, optimize_precision=True,
+    #     cutoff=-2, balance_classes=True, feature_elimination_n=0.02, optimize_precision=True,
     #     cohorts=["PD"], post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
-    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
-    #     base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
-    #     drop_predictors=drop, filename_suffix="pd_cutoff_-1_data", do_grid_search=True, treated_untreated="untreated",
-    #     on_off_dose="off", cutoff=-1, balance_classes=True, feature_elimination_n=0.02,
-    #     cohorts=["PD"], post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
-
-    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
-    #     base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
-    #     drop_predictors=drop, filename_suffix="pd_cutoff_0_data", do_grid_search=True, treated_untreated="untreated",
-    #     on_off_dose="off", cutoff=0, balance_classes=True, feature_elimination_n=0.02,
-    #     cohorts=["PD"], post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
-
-    # # Run rate of progression, lme, PD patients, untreated, manually selected cutoff range, on target UPDRS PART II
-    # for cutoff in [-0.4, -.2, 0, .2, 0.4]:
-    #     run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
-    #         base_target="UPDRS_II", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
-    #         drop_predictors=drop, filename_suffix="pd_data", do_grid_search=True, treated_untreated="untreated",
-    #         on_off_dose="off", cutoff=cutoff, balance_classes=True,
-    #         cohorts=["PD", "GRPD", "GCPD"], post_lme_data=None,
-    #         data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
-    #
-    # # Run rate of progression, lme, PD patients, untreated, manually selected cutoff range, on target UPDRS PART I
-    # for cutoff in [-0.4, -.2, 0, .2, 0.4]:
-    #     run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
-    #         base_target="UPDRS_I", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
-    #         drop_predictors=drop, filename_suffix="pd_data", do_grid_search=True, treated_untreated="untreated",
-    #         on_off_dose="off", cutoff=cutoff, balance_classes=True,
-    #         cohorts=["PD", "GRPD", "GCPD"], post_lme_data=None,
-    #         data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
-
-    # Run future score, PD patients, treated and untreated, off dose, total updrs
-    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
-    #     base_target="TOTAL", outcome_measure="SCORE_FUTURE", add_predictors=None, drop_predictors=drop + ["TOTAL"],
-    #     filename_suffix="pd_data", do_grid_search=True, treated_untreated="treated_and_untreated",
-    #     on_off_dose="off", cohorts=["PD", "GRPD", "GCPD"],
-    #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
-
+    # TODO: determine cohorts
+    # Future Severity
+    drop += ["UPDRS_III"]
     run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
         base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
-        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated",
-        on_off_dose="off", cutoff=-1.5, balance_classes=False, feature_elimination_n=0.02, optimize_precision=False,
-        cohorts=["PD"], post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", feature_elimination_n=None,
+        cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
 
 
