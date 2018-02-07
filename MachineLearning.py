@@ -221,7 +221,7 @@ def metrics(data, predictors, target, algs, alg_names, feature_importances=None,
                 plot_confusion_matrix(cm_normalized, title="Normalized Confusion Matrix\n[{}]".format(name))
 
             # Show confusion matrix plots
-            plt.show()
+            # plt.show()
 
     # Grid search
     def print_grid_search(alg, name, params):
