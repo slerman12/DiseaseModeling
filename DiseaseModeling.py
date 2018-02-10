@@ -13,7 +13,9 @@ from sklearn.naive_bayes import GaussianNB, MultinomialNB, BernoulliNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.metrics import precision_score, make_scorer
+from sklearn.exceptions import UndefinedMetricWarning
 import MachineLearning as mL
+import warnings
 
 
 # Display progress in console
@@ -291,7 +293,7 @@ def process_data(data, model_type, patient_key, time_key, base_target, outcome_m
 # TODO: Truly maximize by searching space of all feature/patient NA-less combinations
 # Automatic feature and row elimination (automatically get rid of NAs and maximize data)
 def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop_predictors=None, add_predictors=None,
-                              feature_elimination_n=None, print_results=False, dummy_features=None, final_features=None,
+                              na_elimination_n=None, print_results=False, dummy_features=None, final_features=None,
                               balance_classes=False, data_filename="disease_modeling_data.csv"):
     # Initiate empty list(s) when no drop/add predictors
     if drop_predictors is None:
@@ -319,33 +321,49 @@ def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop
         # Make a copy of the data
         d = data.copy()
 
+        # Get original dimensions
+        if balance_classes:
+            original_observation_count, original_variable_count = min(len(d[d[outcome_measure] == 0].index),
+                                                                      len(d[d[outcome_measure] == 1].index)), \
+                                                                  len(d.keys())
+        else:
+            original_observation_count, original_variable_count = len(d.index), len(d.keys())
+
         # Eliminate features with more than n (%) NA at BL
         for col in d.keys():
             if col not in add_predictors + [outcome_measure]:
+                # Processed data produces baseline-only data so checking for baseline might be redundant
                 if time_key is not None:
                     if d.loc[d[time_key] == 0, col].isnull().values.sum().astype(float) / len(
-                            d[d[time_key] == 0]) > n:
+                            d[d[time_key] == 0].index) > n:
                         d = d.drop(col, 1)
                 else:
-                    if d[col].isnull().values.sum().astype(float) / len(d) > n:
+                    if d[col].isnull().values.sum().astype(float) / len(d.index) > n:
                         d = d.drop(col, 1)
 
-        # Drop patients with NAs at BL
+        # Drop observations with NAs at BL
         if time_key is not None:
-            d = d[d[patient_key].isin(d.loc[(d[time_key] == 0) & (d.notnull().all(axis=1)), patient_key])]
+            # d = d[d[patient_key].isin(d.loc[(d[time_key] == 0) & (d.notnull().all(axis=1)), patient_key])]
+            # TODO: this should only drop baseline observation
+            d = d.dropna(axis=0, how='any')
         else:
-            d = d[d[patient_key].isin(d.loc[d.notnull().all(axis=1), patient_key])]
+            # d = d[d[patient_key].isin(d.loc[d.notnull().all(axis=1), patient_key])]
+            d = d.dropna(axis=0, how='any')
 
         # Display progress
         prog.update_progress()
 
         # Return dimensions/d
         if test:
-            # Return number of features * patients. If classes balanced, then features * (patients in smaller class)
+            # TODO: Weigh w.r.t. original proportions
+            # Return # of features * observations. If classes balanced, then features * (observations in smaller class)
+            # Weighed proportionally to original dimensions
             if balance_classes:
-                return len(d.keys()) * min(len(d[d[outcome_measure] == 0, patient_key].unique()), len(d[d[outcome_measure] == 1, patient_key].unique()))
+                return len(d.keys()) * (min(len(d[d[outcome_measure] == 0].index),
+                                            len(d[d[outcome_measure] == 1].index)) *
+                                        (original_variable_count / original_observation_count))
             else:
-                return len(d.keys()) * len(d[patient_key].unique())
+                return len(d.keys()) * (len(d.index) * (original_variable_count / original_observation_count))
         else:
             # Return d
             return d
@@ -353,40 +371,50 @@ def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop
     # Print "before" dimensions
     if print_results:
         # Print number patients and features before feature elimination
-        print("BEFORE FEATURE/ROW ELIMINATION: Patients: {}, Features: {}".format(
+        print("BEFORE NA ELIMINATION: Observations: {}, Patients: {}, Features: {}".format(
+            len(data.index),
             len(data[patient_key].unique()),
             len(data.keys())))
 
     # Initiate progress
-    prog = Progress(0, 41, "Feature/Row Elimination", print_results and feature_elimination_n is None)
+    prog = Progress(0, 41, "NA Elimination", print_results and na_elimination_n is None)
 
     # Find optimal feature elimination n
-    if feature_elimination_n is None:
-        feature_elimination_n = max([x / 1000 for x in range(0, 1000, 25)],
-                                    key=lambda n: feature_row_elimination(n, True))
+    if na_elimination_n is None:
+        na_elimination_n = max([x / 1000 for x in range(0, 1000, 25)],
+                               key=lambda n: feature_row_elimination(n, True))
 
         # Print optimal feature elimination n
         if print_results:
-            print("\rFeature Elimination N: {:.0%}".format(feature_elimination_n))
+            print("\rNA Elimination N: {:.0%}".format(na_elimination_n))
 
-    # Perform automatic feature/row elimination
-    data = feature_row_elimination(feature_elimination_n)
+    # Perform automatic NA elimination
+    data = feature_row_elimination(na_elimination_n)
 
     # Print "after" dimensions
     if print_results:
         # Print number patients and features after feature elimination
-        print("AFTER FEATURE/ROW ELIMINATION: Patients: {}, Features: {}".format(
+        print("AFTER NA ELIMINATION: Observations: {}, Patients: {}, Features: {}".format(
+            len(data.index),
             len(data[patient_key].unique()),
             len(data.keys())))
 
     if balance_classes:
+        # Print cutoff proportions
+        print("INCLUSION/EXCLUSION INTERVAL SIZE: {}:{} [# of Patients]".format(
+            data.loc[data[outcome_measure] == 0, outcome_measure].size,
+            data.loc[data[outcome_measure] == 1, outcome_measure].size))
+
         # Use smaller class size value
-        if data.loc[data[outcome_measure] == 0, outcome_measure].size < data.loc[data[outcome_measure] == 1, outcome_measure].size:
+        if data.loc[data[outcome_measure] == 0, outcome_measure].size < data.loc[
+                    data[outcome_measure] == 1, outcome_measure].size:
             # Use a subset of the larger class that is the same size as the smaller class
-            drop_size = data.loc[data[outcome_measure] == 1, outcome_measure].size - data.loc[data[outcome_measure] == 0, outcome_measure].size
+            drop_size = data.loc[data[outcome_measure] == 1, outcome_measure].size - data.loc[
+                data[outcome_measure] == 0, outcome_measure].size
             drop_indices = np.random.choice(data[data[outcome_measure] == 1].index, drop_size, replace=False)
         else:
-            drop_size = data.loc[data[outcome_measure] == 0, outcome_measure].size - data.loc[data[outcome_measure] == 1, outcome_measure].size
+            drop_size = data.loc[data[outcome_measure] == 0, outcome_measure].size - data.loc[
+                data[outcome_measure] == 1, outcome_measure].size
             drop_indices = np.random.choice(data[data[outcome_measure] == 0].index, drop_size, replace=False)
 
         # Drop subset of larger class so both classes are equal in size
@@ -436,9 +464,8 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     # Print data diagnostics
     if print_results:
         # Data diagnostics after feature generation
-        mL.describe_data(data=data, describe=True, description="TRAINING DATA SUMMARY:")
         mL.describe_data(data=data, value_counts=None if is_regressor else [outcome_measure], describe=True,
-                         description="PREDICTIVE TARGET SUMMARY:")
+                         description="DATA SUMMARY:")
 
     # Initialize output
     model_results = {}
@@ -527,7 +554,7 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     # Display feature importances and other metrics
     metrics = mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
                          alg_names=alg_names, feature_importances=[True], base_score=[print_results or output_results],
-                         oob_score=[print_results or output_results], print_results=print_results)
+                         oob_score=[print_results or output_results], print_results=print_results, description=None)
 
     # Precision scorer
     precision_scorer = make_scorer(precision_score, pos_label=0, average="binary")
@@ -535,7 +562,7 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
     # Display metrics, including r2 score
     metrics.update(mL.metrics(data=data, predictors=predictors, target=outcome_measure, algs=algs,
                               alg_names=alg_names, cross_val=[print_results or output_results],
-                              scoring="r2", print_results=print_results))
+                              scoring="r2", print_results=print_results, description=None))
 
     if optimize_precision:
         # Display precision score
@@ -573,10 +600,6 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
                    algs=algs, alg_names=alg_names, split_confusion_matrix=[True], description=None,
                    print_results=print_results)
 
-    # If grid search and print results
-    if print_results and do_grid_search:
-        print(grid_search["Grid Search String Random Forest"])
-
     # Get feature importances
     feature_importances = metrics["Feature Importances Random Forest"]
 
@@ -601,7 +624,8 @@ def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=
         results.loc[0, "mae"] = metrics["Cross Validation neg_mean_absolute_error Random Forest"]
         results.loc[0, "rmse"] = metrics["Cross Validation root_mean_squared_error Random Forest"]
         results.loc[0, "accuracy"] = metrics["Cross Validation accuracy Random Forest"]
-        results.loc[0, "precision"] = metrics["Cross Validation make_scorer(precision_score, average=binary, pos_label=0) Random Forest"]
+        results.loc[0, "precision"] = metrics[
+            "Cross Validation make_scorer(precision_score, average=binary, pos_label=0) Random Forest"]
         feature_importances = list(metrics["Feature Importances Random Forest"])
         results.loc[0, "features"] = feature_importances[0][0]
         results.loc[0, "importances"] = feature_importances[0][1]
@@ -729,6 +753,7 @@ def generate_future_score(data, features, id_name, score_name, time_name, progre
         # Update progress
         prog.update_progress()
 
+    # TODO: customizable time range
     # Return new data with future baseline
     return new_data[(new_data["TIME_FUTURE"] >= 0) & (new_data["TIME_FUTURE"] <= 24)]
 
@@ -800,8 +825,8 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
 
     # If linear mixed effects model
     if target == "RATE_LME_CONTINUOUS" \
-            or target == "RATE_LME_INCLUSION/EXCLUSION_SLOW" \
-            or target == "RATE_LME_INCLUSION/EXCLUSION_FAST" \
+            or target == "RATE_LME_INCLUSION_EXCLUSION_SLOW" \
+            or target == "RATE_LME_INCLUSION_EXCLUSION_FAST" \
             or target == "RATE_LME_DISCRETE" \
             or target == "RATE_LME_TX_VS_NO_TX_CONTINUOUS" \
             or target == "RATE_LME_INCLUSION_EXCLUSION_MAN":
@@ -844,18 +869,18 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
         lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_DISCRETE"] = 2
 
         # Label fast and not fast progression
-        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION_EXCLUSION_FAST"] = 0
         lme_result.loc[
             (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
-                lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 0
-        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_FAST"] = 1
+                lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION_EXCLUSION_FAST"] = 0
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION_EXCLUSION_FAST"] = 1
 
         # Label slow and not slow progression
-        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 0
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_1, "RATE_LME_INCLUSION_EXCLUSION_SLOW"] = 0
         lme_result.loc[
             (lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_1) & (
-                lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
-        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION/EXCLUSION_SLOW"] = 1
+                lme_result["RATE_LME_CONTINUOUS"] < lme_tertile_2), "RATE_LME_INCLUSION_EXCLUSION_SLOW"] = 1
+        lme_result.loc[lme_result["RATE_LME_CONTINUOUS"] >= lme_tertile_2, "RATE_LME_INCLUSION_EXCLUSION_SLOW"] = 1
 
         if cutoff is not None:
             # Label manually selected cutoff progression
@@ -897,8 +922,8 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
         return data
     # If linear regression model
     elif target == "RATE_LR_DISCRETE" \
-            or target == "RATE_LR_INCLUSION/EXCLUSION_SLOW" \
-            or target == "RATE_LR_INCLUSION/EXCLUSION_FAST" \
+            or target == "RATE_LR_INCLUSION_EXCLUSION_SLOW" \
+            or target == "RATE_LR_INCLUSION_EXCLUSION_FAST" \
             or target == "RATE_LR_CONTINUOUS":
         # Initialize progress measures
         prog = Progress(0, len(data[id_name].unique()), "Rate Linear Regression", progress)
@@ -941,23 +966,23 @@ def generate_rate_of_progression(data, id_name, time_name, score_name, target, p
         data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_DISCRETE"] = 2
 
         # Label slow, medium, and fast progression
-        data.loc[data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
+        data.loc[data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION_EXCLUSION_FAST"] = 0
         data.loc[
             (data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
-                data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 0
-        data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_FAST"] = 1
+                data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION_EXCLUSION_FAST"] = 0
+        data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION_EXCLUSION_FAST"] = 1
 
         # Label slow, medium, and fast progression
-        data.loc[data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 0
+        data.loc[data["RATE_LR_CONTINUOUS"] < tertile_1, "RATE_LR_INCLUSION_EXCLUSION_SLOW"] = 0
         data.loc[
             (data["RATE_LR_CONTINUOUS"] >= tertile_1) & (
-                data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
-        data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION/EXCLUSION_SLOW"] = 1
+                data["RATE_LR_CONTINUOUS"] < tertile_2), "RATE_LR_INCLUSION_EXCLUSION_SLOW"] = 1
+        data.loc[data["RATE_LR_CONTINUOUS"] >= tertile_2, "RATE_LR_INCLUSION_EXCLUSION_SLOW"] = 1
 
         if cutoff is not None:
             # Label manually selected cutoff progression
-            data.loc[data["RATE_LR_CONTINUOUS"] < cutoff, "RATE_LR_INCLUSION/EXCLUSION_MAN"] = 0
-            data.loc[data["RATE_LR_CONTINUOUS"] >= cutoff, "RATE_LR_INCLUSION/EXCLUSION_MAN"] = 1
+            data.loc[data["RATE_LR_CONTINUOUS"] < cutoff, "RATE_LR_INCLUSION_EXCLUSION_MAN"] = 0
+            data.loc[data["RATE_LR_CONTINUOUS"] >= cutoff, "RATE_LR_INCLUSION_EXCLUSION_MAN"] = 1
 
         # Return new data
         return data
@@ -1147,7 +1172,7 @@ def histograms_rate_lme_types_lr(patient_key, time_key, base_target, drop_predic
 # Model type: Select "future_severity", "rate_of_progression", or "time_until_symptom_onset")
 # Is regression: True for modeling regression, False for classification
 # Base target: Feature from raw data to be used to create outcome measure (example: "TOTAL" or combined part II an III)
-# Outcome measure: Final target (examples: "SCORE_FUTURE", "TIME_UNTIL_MILESTONE", "RATE_LME_INCLUSION/EXCLUSION_FAST")
+# Outcome measure: Final target (examples: "SCORE_FUTURE", "TIME_UNTIL_MILESTONE", "RATE_LME_INCLUSION_EXCLUSION_FAST")
 # Add predictors: Explicit features to add as predictors, regardless of ranking of importance
 # Drop predictors: Explicit features not to use as predictors, regardless of ranking of importance
 # Filename suffix: Suffix of file output names
@@ -1155,7 +1180,7 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
         drop_predictors=None, on_off_dose="off", treated_untreated="treated_and_untreated", cutoff=None,
         balance_classes=False, data_merged_sc_into_bl_file_path=None, do_grid_search=False, no_nulls_data=None,
         processed_data=None, preprocessed_data=None, cohorts=None,
-        post_lme_data=None, feature_elimination_n=None, optimize_precision=False):
+        post_lme_data=None, na_elimination_n=None, optimize_precision=False):
     # Print run details
     print("\nRUN DETAILS\n")
     print("Model type: {}\n"
@@ -1164,13 +1189,14 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
           "Outcome measure: {}\n"
           "On or off dose? {}\n"
           "Treated or untreated? {}\n"
+          "Cohorts: {}\n"
           "Manually selected cutoff? {}\n"
           "Classes balanced: {}\n"
           "LME with R framework? {}\n"
           "Grid search? {}\n"
           "Precision? {}".format(model_type, not is_regressor, base_target, outcome_measure, on_off_dose,
-                                     treated_untreated, cutoff, balance_classes,
-                                     post_lme_data is not None, do_grid_search, optimize_precision))
+                                 treated_untreated, ', '.join(cohorts), cutoff, balance_classes,
+                                 post_lme_data is not None, do_grid_search, optimize_precision))
 
     # Initiate empty list(s) when no drop/add predictors or cohorts
     if add_predictors is None:
@@ -1181,12 +1207,9 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
         cohorts = ["PD"]
 
     # Filename suffixes
-    if model_type == "rate_of_progression":
-        filename_suffix = "{}_{}_{}_{}_{}_{}_cutoff_{}".format(model_type, treated_untreated, on_off_dose, 
-                                                               outcome_measure, base_target, '_'.join(cohorts), cutoff)
-    elif model_type == "future_severity":
-        filename_suffix = "{}_{}_{}_{}_{}_{}".format(model_type, treated_untreated, on_off_dose, outcome_measure,
-                                                     base_target, '_'.join(cohorts))
+    filename_suffix = "{}_{}_{}_{}_{}_{}{}".format(model_type, treated_untreated, on_off_dose, outcome_measure,
+                                                   base_target, '_'.join(cohorts),
+                                                   "_cutoff_{}".format(cutoff) if cutoff is not None else "")
 
     # If fully processed and numeric data is not provided
     if no_nulls_data is None:
@@ -1198,21 +1221,22 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
                 preprocessed_data = preprocess_data(base_target, cohorts=cohorts, print_results=True,
                                                     data_merged_sc_into_bl_file_path=data_merged_sc_into_bl_file_path,
                                                     on_off_dose=on_off_dose, treated_untreated=treated_untreated,
-                                                    data_filename="data/output/preprocessed_{}_{}_{}.csv".format(
+                                                    data_filename="data/output/preprocessed_data_{}_{}_{}.csv".format(
                                                         treated_untreated, on_off_dose, '_'.join(cohorts)))
 
             # Prepare data and generate outcome measure
             processed_data = process_data(preprocessed_data, model_type, patient_key, time_key, base_target,
                                           outcome_measure, drop_predictors, print_results=True, output_file=True,
-                                          data_filename="data/output/processed_{}.csv".format(filename_suffix),
+                                          data_filename="data/output/processed_data_{}.csv".format(filename_suffix),
                                           cutoff=cutoff, post_lme_data=post_lme_data)
 
         # Maximize data dimensions w/o NAs
         no_nulls_data = eliminate_nulls_maximally(processed_data, patient_key, time_key, outcome_measure,
                                                   drop_predictors, add_predictors,
-                                                  feature_elimination_n=feature_elimination_n, print_results=True,
+                                                  na_elimination_n=na_elimination_n, print_results=True,
                                                   balance_classes=balance_classes,
-                                                  data_filename="data/output/no_nulls_{}.csv".format(filename_suffix))
+                                                  data_filename="data/output/no_NAs_data_{}.csv".format(
+                                                      filename_suffix))
 
     # Primary run of model
     primary_estimator = model(no_nulls_data, model_type, outcome_measure, is_regressor, drop_predictors,
@@ -1228,9 +1252,12 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
     final_features = list(
         set(primary_estimator["Top Predictors"]).union([patient_key, time_key, outcome_measure]))
 
+    # Print top ranking variables
+    print("\n{} TOP RANKING VARIABLES: {}\n".format(len(final_features), final_features))
+
     # Eliminate nulls maximally from processed data without unused features
     final_data = eliminate_nulls_maximally(processed_data, patient_key, time_key,
-                                           outcome_measure, drop_predictors, feature_elimination_n=1,
+                                           outcome_measure, drop_predictors, na_elimination_n=1,
                                            print_results=True, dummy_features=primary_estimator["Dummy Features"],
                                            final_features=final_features,
                                            balance_classes=balance_classes,
@@ -1257,6 +1284,9 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
 
 # Main method
 if __name__ == "__main__":
+    # Suppress grid search undefined metric warning for unused models that have precision 0 denominator
+    warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
+
     # Set seed
     np.random.seed(0)
 
@@ -1273,12 +1303,12 @@ if __name__ == "__main__":
             "TIME_OF_MILESTONE", "TIME_FUTURE", "TIME_UNTIL_MILESTONE", "BIRTHDT.y", "TIME_FROM_BL", "WDDT", "WDRSN",
             "SXDT", "PDDXDT", "SXDT_x", "PDDXDT_x", "RATE_LR_CONTINUOUS", "DVT_SFTANIM", "DVT_SDM",
             "DVT_RECOG_DISC_INDEX", "DVT_RETENTION", "DVT_DELAYED_RECALL", "RATE_LME_CONTINUOUS",
-            "RATE_LME_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION/EXCLUSION_SLOW",
-            "RATE_LR_INCLUSION/EXCLUSION_SLOW", "RATE_LR_INCLUSION/EXCLUSION_FAST", "RATE_LME_INCLUSION_EXCLUSION_MAN",
+            "RATE_LME_INCLUSION_EXCLUSION_FAST", "RATE_LME_INCLUSION_EXCLUSION_SLOW",
+            "RATE_LR_INCLUSION_EXCLUSION_SLOW", "RATE_LR_INCLUSION_EXCLUSION_FAST", "RATE_LME_INCLUSION_EXCLUSION_MAN",
             "RATE_LR_DISCRETE", "total_st_unadj", "total_adj", "total_unadj", "total_st_adj", "total_st_unadj",
             "pt3_adj", "pt3_unadj", "pt3_st_adj", "pt3_st_unadj", "pt3_nst_adj", "pt3_nst_unadj", "total_adj0",
             "total_adj1", "total_adj2", "pt3_adj0", "pt3_adj1", "pt3_adj2", "total_nst_adj", "total_nst_unadj",
-            "RATE_LME_DISCRETE", "RATE_LR_INCLUSION/EXCLUSION_MAN", "(Intercept)", "RATE_LME_CONTINUOUS_JIHOON",
+            "RATE_LME_DISCRETE", "RATE_LR_INCLUSION_EXCLUSION_MAN", "(Intercept)", "RATE_LME_CONTINUOUS_JIHOON",
             "TIME_SINCE_FIRST_SYMPTOM",
             "NP1COG", "NP1HALL", "NP1DPRS", "NP1ANXS", "NP1APAT", "NP1DDS", "NP1SLPN", "NP1SLPD", "NP1PAIN", "NP1URIN",
             "NP1CNST", "NP1LTHD", "NP1FATG", "NP2SPCH", "NP2SALV", "NP2SWAL", "NP2EAT", "NP2DRES", "NP2HYGN", "NP2HWRT",
@@ -1289,14 +1319,13 @@ if __name__ == "__main__":
             "NP3RTALL", "NP3RTALJ", "NP3RTCON", "GENDER.y_M_1", "GENDER.y_FNC_0", "GENDER.y_FNS_1", "JLO_TOTRAW",
             "HVLTRT1 à DVT_TOTAL_RECALL", "LNS1A à LNS7C", "TMDISMED", "CNTRLDSM", "HTCM", "TEMPC", "BPARM", "BIOMOM",
             "BIODAD", "FULSIB", "HAFSIB", "MAGPAR", "PAGPAR", "MATAU", "PATAU", "KIDSNUM", "JLO_TOTRAW", "HVLTRT1",
-            "HVLTRT2", "HVLTRT3", "HVLTDLY", "HVLTREC", "HVLTFPRL", "HVLTFPUN", "HVLTVRSN", "DVT_TOTAL_RECALL", 
+            "HVLTRT2", "HVLTRT3", "HVLTDLY", "HVLTREC", "HVLTFPRL", "HVLTFPUN", "HVLTVRSN", "DVT_TOTAL_RECALL",
             "LNS1A", "LNS1B", "LNS1C", "LNS2A", "LNS2B", "LNS2C", "LNS3A", "LNS3B", "LNS3C", "LNS4A", "LNS4B", "LNS4C",
             "LNS5A", "LNS5B", "LNS5C", "LNS6A", "LNS6B", "LNS6C", "LNS7A", "LNS7B", "LNS7C", "CNTRLDSM", "UPSITBK1",
             "UPSITBK2", "UPSITBK3", "UPSITBK4", "HTCM", "TEMPC", "BPARM", "CSFHemoglobin", "CAUDATE_R", "CAUDATE_L",
             "PUTAMEN_R", "PUTAMEN_L", "Totaltau", "Abeta42", "Total Protein", "Basophils", "Eosinophils",
             "Neutrophils", "Monocytes", "Lymphocytes", "Totaltau (%)", "Abeta42 (%)", "Total Protein (%)",
             "Basophils (%)", "Eosinophils (%)", "Neutrophils (%)", "Monocytes (%)", "Lymphocytes (%)"]
-
 
     # Retrieve preprocessed data (treated and untreated, off dose, pd patients))
     # preprocessed = retrieve_data("data/output/preprocessed_untreated_off_pd_data.csv",
@@ -1314,22 +1343,26 @@ if __name__ == "__main__":
     # Retrieve Jihoon's LME data for "post_lme_data"
     # lme_data = retrieve_data('data/output/updrs_lme.csv', keys=["PATNO"])
 
-    # Rate of Progression
+    # TODO: Test treated on/off and cohorts
+    # Rate of Progression - manually selected cutoff
     # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
     #     base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
     #     drop_predictors=drop, do_grid_search=True, treated_untreated="untreated",
-    #     cutoff=-2, balance_classes=True, feature_elimination_n=0.02, optimize_precision=True,
+    #     cutoff=-2, balance_classes=True, na_elimination_n=None, optimize_precision=True,
     #     cohorts=["PD"], post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
-    # TODO: determine cohorts
-    # Future Severity
-    drop += ["UPDRS_III"]
-    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
-        base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
-        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", feature_elimination_n=None,
-        cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
+    # Rate of Progression - automatically selected tertile-based cutoff
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", balance_classes=True,
+        na_elimination_n=None, optimize_precision=True, cohorts=["PD", "GRPD", "GCPD", "CONTROL"], post_lme_data=None,
         data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
-
-
-
+    # TODO: determine best cohorts
+    # Future Severity
+    drop += ["UPDRS_III"]
+    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
+    #     base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
+    #     drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", na_elimination_n=None,
+    #     cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
+    #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
