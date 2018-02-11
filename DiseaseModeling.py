@@ -177,7 +177,7 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
 
         # Only include treated patients
         if treated_untreated == "treated":
-            # TODO: Adjust baselines for treated periods!
+            # TODO: Adjust baselines for treated periods! ST should be the new baseline
             data = data[data["IS_TREATED"] == 1]
         elif treated_untreated == "treated_and_untreated":
             # Print number of treated vs untreated patients
@@ -198,7 +198,6 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
     # Only include patients when they're not receiving symptomatic treatment
     # data = data[data["ON_OFF_DOSE"].isnull()]
 
-    # TODO: Check if this correctly differentiates between treated/untreated
     # Add binary feature for whether patient is receiving symptomatic therapy
     # data.loc[:, "IS_TREATED"] = 1
     # data.loc[data["ON_OFF_DOSE"].isnull(), "IS_TREATED"] = 0
@@ -319,6 +318,7 @@ def process_data(data, model_type, patient_key, time_key, base_target, outcome_m
 
 
 # TODO: Truly maximize by searching space of all feature/patient NA-less combinations
+# TODO: Make binary dummies for categorical data!
 # Automatic feature and row elimination (automatically get rid of NAs and maximize data)
 def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop_predictors=None, add_predictors=None,
                               na_elimination_n=None, print_results=False, dummy_features=None, final_features=None,
@@ -1360,14 +1360,25 @@ if __name__ == "__main__":
 
     print("\n\n--------------------------------------------------------------------------------------------------------"
           "-------------------------------------------------------")
-    print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - PD cohort - treated  and "
-          "untreated'off' dose")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion -2 cutoff - PD cohort - untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", cutoff=-2,
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD"], post_lme_data=None,
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion -1 cutoff - PD cohort - untreated")
     print("------------------------------------------------------------------------------------------------------------"
           "---------------------------------------------------\n")
 
     run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
         base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
-        drop_predictors=drop, do_grid_search=True, treated_untreated="treated_and_untreated", on_off_dose="off",
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", cutoff=-1,
         balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD"], post_lme_data=None,
         data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
@@ -1385,6 +1396,58 @@ if __name__ == "__main__":
 
     print("\n\n--------------------------------------------------------------------------------------------------------"
           "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - PD, GRPD, GCPD, CONTROL cohorts"
+          " - untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
+        post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - PD, CONTROL cohorts"
+          " - untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD", "CONTROL"],
+        post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - PD cohort - treated  and "
+          "untreated'off' dose")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="treated_and_untreated", on_off_dose="off",
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD"], post_lme_data=None,
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion -2 cutoff - PD cohort - treated  and "
+          "untreated'off' dose")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", cutoff=-2, add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="treated_and_untreated", on_off_dose="off",
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD"], post_lme_data=None,
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
     print("Future severity - UPDRS III - PD cohort - untreated")
     print("------------------------------------------------------------------------------------------------------------"
           "---------------------------------------------------\n")
@@ -1393,6 +1456,19 @@ if __name__ == "__main__":
     run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
         base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
         drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
+        na_elimination_n=None, cohorts=["PD"],
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Future severity - UPDRS III - PD cohort - treated and untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    drop += ["UPDRS_III"]
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
+        base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="treated_and_untreated", on_off_dose="off",
         na_elimination_n=None, cohorts=["PD"],
         data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
