@@ -148,28 +148,51 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
                 data.loc[(data["PATNO"] == patient) & (data["EVENT_ID"] == "ST"), "INFODT"].values[0])
             data.loc[(data["PATNO"] == patient) & (pd.to_datetime(data["INFODT"]) >= st_date), "IS_TREATED"] = 1
 
-    # TODO: Check if correct differentiation between on/off - look at PD_MED_USE (untreated: PD_MED_USE = 0 and ON_OFF_DOSE is null)
+    # TODO: Check differentiation between on/off. Look at PD_MED_USE (untreated: PD_MED_USE = 0 and ON_OFF_DOSE is null)
     # Treated vs untreated periods
     if treated_untreated == "treated_and_untreated" or treated_untreated == "treated":
         # On vs. Off dose
         if on_off_dose == "off":
-            # Only include "off" data (Exclude NUPDRS3A measurements and <6hrs since last PD med dose intake measurements)
+            # Only include "off" data (Exclude NUPDRS3A measurements and <6hrs since last PD med dose intake)
             data = data[data["PAG_UPDRS3"] == "NUPDRS3"]
-            if treated_untreated == "treated_and_untreated":
-                data = data[data["ON_OFF_DOSE"] != 2]
-            else:
-                data = data[data["ON_OFF_DOSE"] == 1]
+
+            # if treated_untreated == "treated_and_untreated":
+            #     data = data[data["ON_OFF_DOSE"] != 2]
+            # else:
+            #     data = data[data["ON_OFF_DOSE"] == 1]
+
+            # Drop on dose
+            data = data[data["ON_OFF_DOSE"] != 2]
         elif on_off_dose == "on":
-            # Only include "on" data (>6hrs since last PD med dose intake measurements or "not recieving symptomatic therapy"")
+            # Only include "on" data (>6hrs since last PD med dose intake measurements or untreated)
             data = data[data["PAG_UPDRS3"] == "NUPDRS3A"]
-            if treated_untreated == "treated_and_untreated":
-                data = data[(data["ON_OFF_DOSE"] == 2) | data["ON_OFF_DOSE"].isnull()]
-            else:
-                data = data[(data["ON_OFF_DOSE"] == 2)]
+
+            # if treated_untreated == "treated_and_untreated":
+            #     data = data[(data["ON_OFF_DOSE"] == 2) | data["ON_OFF_DOSE"].isnull()]
+            # else:
+            #     data = data[(data["ON_OFF_DOSE"] == 2)]
+
+            # Only use on dose for treated periods
+            data = data[(data["ON_OFF_DOSE"] == 2) | data["ON_OFF_DOSE"].isnull()]
+
+        # Only include treated patients
+        if treated_untreated == "treated":
+            # TODO: Adjust baselines for treated periods!
+            data = data[data["IS_TREATED"] == 1]
+        elif treated_untreated == "treated_and_untreated":
+            # Print number of treated vs untreated patients
+            print("{} untreated {}-dose patients\n{} treated {}-dose patients\n".format(len(data.loc[data["IS_TREATED"]
+                                                                                                 == 0, "PATNO"].unique()),
+                                                                                        on_off_dose,
+                                                                                        len(data.loc[data["IS_TREATED"]
+                                                                                                 == 1, "PATNO"].unique()),
+                                                                                        on_off_dose))
     elif treated_untreated == "untreated":
         # Untreated
         # data = data[data["PD_MED_USE"] == 0]
         # data = data[data["ON_OFF_DOSE"].isnull()]
+
+        # Only use untreated period
         data = data[data["IS_TREATED"] == 0]
 
     # Only include patients when they're not receiving symptomatic treatment
@@ -198,6 +221,7 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
     data.loc[(data["APPRDX"] == "PD") | (data["APPRDX"] == "GRPD") | (
         data["APPRDX"] == "GCPD"), "HAS_PD"] = 1
 
+    # TODO: Check if other cohorts like swedds have those dates
     # Controls have missing PDDXDT and SXDT, set to arbitrary date
     data.loc[data["HAS_PD"] == 0, "PDDXDT"] = pd.to_datetime("1/1/1800")
     data.loc[data["HAS_PD"] == 0, "SXDT"] = pd.to_datetime("1/1/1800")
@@ -214,6 +238,10 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
     # Drop patients with baseline NA at feature keys
     data = data[
         data["PATNO"].isin(data.loc[(data["EVENT_ID"] == 0) & (data[feature_keys].notnull().all(axis=1)), "PATNO"])]
+
+    # Print size of each cohort
+    for cohort in cohorts:
+        print("Patients in {} cohort: {}\n".format(cohort, len(data.loc[data["APPRDX"] == cohort, "PATNO"].unique())))
 
     # Generate features (times)
     data = generate_time(data=data, features=features, id_name="PATNO",
@@ -1327,42 +1355,55 @@ if __name__ == "__main__":
             "Neutrophils", "Monocytes", "Lymphocytes", "Totaltau (%)", "Abeta42 (%)", "Total Protein (%)",
             "Basophils (%)", "Eosinophils (%)", "Neutrophils (%)", "Monocytes (%)", "Lymphocytes (%)"]
 
-    # Retrieve preprocessed data (treated and untreated, off dose, pd patients))
-    # preprocessed = retrieve_data("data/output/preprocessed_untreated_off_pd_data.csv",
-    #                              ["PATNO", "TIME_FROM_BL", "TOTAL"])
-
-    # Describe UPDRS parts
-    # print(preprocessed["UPDRS_I"].describe())
-    # print(preprocessed["UPDRS_II"].describe())
-    # print(preprocessed["UPDRS_III"].describe())
-
-    # Print add and drop features
-    # print("\nADD FEATURES:\n{}".format(add))
-    # print("\nDROP FEATURES:\n{}".format(drop))
-
     # Retrieve Jihoon's LME data for "post_lme_data"
     # lme_data = retrieve_data('data/output/updrs_lme.csv', keys=["PATNO"])
 
-    # TODO: Test treated on/off and cohorts
-    # Rate of Progression - manually selected cutoff
-    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
-    #     base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_MAN", add_predictors=add,
-    #     drop_predictors=drop, do_grid_search=True, treated_untreated="untreated",
-    #     cutoff=-2, balance_classes=True, na_elimination_n=None, optimize_precision=True,
-    #     cohorts=["PD"], post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - PD cohort - treated  and "
+          "untreated'off' dose")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
 
-    # Rate of Progression - automatically selected tertile-based cutoff
     run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
         base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
-        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", balance_classes=True,
-        na_elimination_n=None, optimize_precision=True, cohorts=["PD", "GRPD", "GCPD", "CONTROL"], post_lme_data=None,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="treated_and_untreated", on_off_dose="off",
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD"], post_lme_data=None,
         data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
-    # TODO: determine best cohorts
-    # Future Severity
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - PD cohort - untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD"], post_lme_data=None,
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Future severity - UPDRS III - PD cohort - untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
     drop += ["UPDRS_III"]
-    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
-    #     base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
-    #     drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", na_elimination_n=None,
-    #     cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
-    #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
+        base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
+        na_elimination_n=None, cohorts=["PD"],
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Future severity - UPDRS III - PD, GRPD, GCPD, CONTROL cohorts - untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
+        base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
+        na_elimination_n=None, cohorts=["PD", "GRPD", "GCPD", "CONTROL"],
+        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
