@@ -134,7 +134,7 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
 
     # List of patients only enrolled in selected cohorts
     patients_from_selected_cohorts = all_patients.loc[
-        (np.bitwise_or.reduce(np.array([(all_patients["APPRDX"] == cohort) for cohort in cohorts]))) & (
+        (np.bitwise_or.reduce(np.array([(all_patients["RECRUITMENT_CAT"] == cohort) for cohort in cohorts]))) & (
             all_patients["ENROLL_STATUS"] == "Enrolled"), "PATNO"].unique()
 
     # Data for these patients
@@ -217,8 +217,8 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
 
     # Create HAS_PD column
     data.loc[:, "HAS_PD"] = 0
-    data.loc[(data["APPRDX"] == "PD") | (data["APPRDX"] == "GRPD") | (
-        data["APPRDX"] == "GCPD"), "HAS_PD"] = 1
+    data.loc[(data["RECRUITMENT_CAT"] == "PD") | (data["RECRUITMENT_CAT"] == "GENPD") | (
+        data["RECRUITMENT_CAT"] == "REGPD"), "HAS_PD"] = 1
 
     # TODO: Check if other cohorts like swedds have those dates
     # Controls have missing PDDXDT and SXDT, set to arbitrary date
@@ -240,7 +240,7 @@ def preprocess_data(base_target, cohorts=None, on_off_dose="off", treated_untrea
 
     # Print size of each cohort
     for cohort in cohorts:
-        print("Patients in {} cohort: {}\n".format(cohort, len(data.loc[data["APPRDX"] == cohort, "PATNO"].unique())))
+        print("Patients in {} cohort: {}\n".format(cohort, len(data.loc[data["RECRUITMENT_CAT"] == cohort, "PATNO"].unique())))
 
     # Generate features (times)
     data = generate_time(data=data, features=features, id_name="PATNO",
@@ -469,7 +469,7 @@ def eliminate_nulls_maximally(data, patient_key, time_key, outcome_measure, drop
 
 # Train and optimize a model with grid search
 def model(data, model_type, outcome_measure, is_regressor=True, drop_predictors=None, add_predictors=None,
-          do_grid_search=False, feature_importance_min=0.1, print_results=True, output_results=True, n_jobs=-1,
+          do_grid_search=False, feature_importance_min=0.01, print_results=True, output_results=True, n_jobs=-1,
           optimize_precision=False, results_filename="results.csv"):
     # Initiate empty list(s) when no drop/add predictors
     if drop_predictors is None:
@@ -794,7 +794,6 @@ def generate_time(data, features, id_name, time_name, datetime_name, birthday_na
 #     # Return new data with future baseline
 #     return new_data[(new_data["TIME_FUTURE"] >= 0) & (new_data["TIME_FUTURE"] <= 24)]
 
-# TODO: Predicting regardless of baseline
 # Generate future scores
 def generate_future_score(data, features, id_name, score_name, time_name, progress, time_from, time_until):
     # Set features
@@ -1265,7 +1264,7 @@ def run(patient_key, time_key, model_type, is_regressor, base_target, outcome_me
         drop_predictors=None, on_off_dose="off", treated_untreated="treated_and_untreated", cutoff=None,
         balance_classes=False, data_merged_sc_into_bl_file_path=None, do_grid_search=False, no_nulls_data=None,
         processed_data=None, preprocessed_data=None, cohorts=None, time_from=0.0, time_until=0.2,
-        post_lme_data=None, na_elimination_n=None, optimize_precision=False, feature_importance_min=0.1):
+        post_lme_data=None, na_elimination_n=None, optimize_precision=False, feature_importance_min=0.01):
     # Print run details
     print("\nRUN DETAILS\n")
     print("Model type: {}\n"
@@ -1429,32 +1428,41 @@ if __name__ == "__main__":
             "Neutrophils", "Monocytes", "Lymphocytes", "Totaltau (%)", "Abeta42 (%)", "Total Protein (%)",
             "Basophils (%)", "Eosinophils (%)", "Neutrophils (%)", "Monocytes (%)", "Lymphocytes (%)"]
 
+# PD (i.e. de novo Parkinson’s disease) = 360
+# HC (i.e. Healthy Controls) = 170
+# GENPD (i.e. Genetic Cohort with Parkinson’s disease) = 223
+# GENUN (i.e. Genetic Cohort without Parkinson’s disease) = 308
+# REGPD (i.e. Genetic Registry with Parkinson’s disease) = 208
+# REGUN (i.e. Genetic Registry without Parkinson’s disease) = 262
+# Prodromal (i.e. subjects without Parkinson’s disease but at risk) = 60
+# SWEDD (i.e. subjects thought to have Parkinson’s disease based on clinical symptoms but brain scan shows otherwise) = 55
+
     # Retrieve Jihoon's LME data for "post_lme_data"
     # lme_data = retrieve_data('data/output/updrs_lme.csv', keys=["PATNO"])
 
-    print("\n\n--------------------------------------------------------------------------------------------------------"
-          "-------------------------------------------------------")
-    print("Future severity - UPDRS III - PD cohort - untreated - 0 to 4 months time frame")
-    print("------------------------------------------------------------------------------------------------------------"
-          "---------------------------------------------------\n")
-
-    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
-        base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add,
-        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
-        na_elimination_n=None, cohorts=["PD"], time_from=1.0, time_until=1.33, feature_importance_min=0.001,
-        data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
-
     # print("\n\n--------------------------------------------------------------------------------------------------------"
     #       "-------------------------------------------------------")
-    # print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - PD cohort - untreated")
+    # print("Future severity - UPDRS III - PD cohort - untreated - 0 to 4 months time frame")
     # print("------------------------------------------------------------------------------------------------------------"
     #       "---------------------------------------------------\n")
     #
-    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
-    #     base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
-    #     drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
-    #     balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD"], post_lme_data=None,
+    # run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="future_severity", is_regressor=True,
+    #     base_target="UPDRS_III", outcome_measure="SCORE_FUTURE", add_predictors=add, drop_predictors=drop,
+    #     do_grid_search=True, treated_untreated="untreated", on_off_dose="off", na_elimination_n=None,
+    #     cohorts=["PD", "GENPD", "REGPD"], time_from=0, time_until=0.33, feature_importance_min=0.001,
     #     data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
+
+    print("\n\n--------------------------------------------------------------------------------------------------------"
+          "-------------------------------------------------------")
+    print("Rate of progression - UPDRS III - LME - inclusion/exclusion 'slow' tertile - All PD cohorts - untreated")
+    print("------------------------------------------------------------------------------------------------------------"
+          "---------------------------------------------------\n")
+
+    run(patient_key="PATNO", time_key="TIME_FROM_BL", model_type="rate_of_progression", is_regressor=False,
+        base_target="UPDRS_III", outcome_measure="RATE_LME_INCLUSION_EXCLUSION_SLOW", add_predictors=add,
+        drop_predictors=drop, do_grid_search=True, treated_untreated="untreated", on_off_dose="off",
+        balance_classes=True, na_elimination_n=None, optimize_precision=True, cohorts=["PD", "GENPD", "REGPD"],
+        post_lme_data=None, data_merged_sc_into_bl_file_path="data/raw_data/data_merged_SC_into_BL.csv")
 
     # print("\n\n--------------------------------------------------------------------------------------------------------"
     #       "-------------------------------------------------------")
